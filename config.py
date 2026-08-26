@@ -231,7 +231,7 @@ class Config:
     # Consecutive frames below threshold before drowsiness.
     EAR_CONSEC_FRAMES = _env_int(
         "EAR_CONSEC_FRAMES",
-        15
+        8
     )
 
     # Blink duration.
