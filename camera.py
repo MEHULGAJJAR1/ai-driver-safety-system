@@ -1,120 +1,345 @@
 """
 camera.py
 =========
-Camera processing for local webcam and browser/mobile camera.
+Camera processing for local webcam + browser/mobile camera.
 
 LOCAL:
     Uses OpenCV VideoCapture(0).
 
-PRODUCTION:
+PRODUCTION / RENDER:
     Does NOT try to access a server webcam.
     Browser/mobile sends JPEG frames to Flask.
-    Frames are processed by the existing DrowsinessPipeline.
+    Frames are processed by DrowsinessPipeline.
 """
 
+import os
 import time
 import threading
 import base64
-from detection import DrowsinessPipeline
+
 import cv2
 import numpy as np
 
+from detection import DrowsinessPipeline
+
 
 class CameraStream:
+
     def __init__(self, config):
+
         self.config = config
 
+        # Local camera
         self.cap = None
-        self.pipeline = None
         self.thread = None
 
+        # AI pipeline
+        self.pipeline = None
+        self._cnn_active = False
+
+        # State
         self.running = False
         self.browser_mode = False
 
+        # Thread safety
         self.lock = threading.Lock()
 
+        # Latest processed JPEG
         self._jpeg = None
 
+        # Latest detection state
         self.latest_state = {
             "found": False,
-            "status_text": "Idle"
+            "status_text": "Idle",
+            "score": 0,
+            "level": "ALERT",
+            "camera_processing": "LOCAL"
         }
 
-        self._cnn_active = False
+    # ================================================================== #
+    # CONFIG HELPERS
+    # ================================================================== #
 
-    # ------------------------------------------------------------------ #
+    @property
+    def max_camera_frame_kb(self):
+        """
+        Uses config value if available.
+        Falls back to 1024 KB.
+        """
+        return int(
+            getattr(
+                self.config,
+                "MAX_CAMERA_FRAME_KB",
+                1024
+            )
+        )
+
+    @property
+    def camera_jpeg_quality(self):
+        """
+        Uses config value if available.
+        Falls back to 80.
+        """
+        return int(
+            getattr(
+                self.config,
+                "CAMERA_JPEG_QUALITY",
+                80
+            )
+        )
+
+    @property
+    def frame_width(self):
+        return int(
+            getattr(
+                self.config,
+                "FRAME_WIDTH",
+                640
+            )
+        )
+
+    @property
+    def frame_height(self):
+        return int(
+            getattr(
+                self.config,
+                "FRAME_HEIGHT",
+                480
+            )
+        )
+
+    @property
+    def camera_index(self):
+        return int(
+            getattr(
+                self.config,
+                "CAMERA_INDEX",
+                0
+            )
+        )
+
+    # ================================================================== #
+    # ENVIRONMENT
+    # ================================================================== #
+
+    @property
+    def is_render(self):
+        """
+        Render automatically provides RENDER=true.
+        """
+        return (
+            os.environ.get("RENDER", "").lower() == "true"
+            or bool(os.environ.get("RENDER_SERVICE_ID"))
+        )
+
+    # ================================================================== #
+    # AI PIPELINE
+    # ================================================================== #
+
     @property
     def cnn_active(self):
+
         if self.pipeline is None:
             self._ensure_pipeline()
 
         return self._cnn_active
 
-    # ------------------------------------------------------------------ #
     def _ensure_pipeline(self):
+
         if self.pipeline is not None:
-            return
+            return True
 
         try:
-            from detection import DrowsinessPipeline
 
-            self.pipeline = DrowsinessPipeline(self.config)
-            self._cnn_active = self.pipeline.cnn_active
+            print(
+                "[CameraStream] Loading DrowsinessPipeline..."
+            )
+
+            self.pipeline = DrowsinessPipeline(
+                self.config
+            )
+
+            self._cnn_active = bool(
+                getattr(
+                    self.pipeline,
+                    "cnn_active",
+                    False
+                )
+            )
+
+            print(
+                "[CameraStream] DrowsinessPipeline loaded successfully."
+            )
+
+            print(
+                f"[CameraStream] CNN active: {self._cnn_active}"
+            )
+
+            return True
 
         except Exception as exc:
-            print(f"[CameraStream] Pipeline init failed: {exc}")
+
+            print(
+                "[CameraStream] Pipeline init failed:"
+            )
+
+            print(
+                repr(exc)
+            )
 
             self.pipeline = None
             self._cnn_active = False
 
-    # ------------------------------------------------------------------ #
-    # LOCAL WEBCAM MODE
-    # ------------------------------------------------------------------ #
-    def start(self):
-        """
-        Start local physical webcam.
+            return False
 
-        Used only during local development.
+    # ================================================================== #
+    # START CAMERA
+    # ================================================================== #
+
+    def start(self):
+
         """
+        Start camera.
+
+        On Render:
+            Never tries to access server webcam.
+            Starts browser camera session.
+
+        Locally:
+            Uses OpenCV webcam.
+        """
+
+        # -------------------------------------------------------------- #
+        # If already running
+        # -------------------------------------------------------------- #
 
         if self.running:
             return True
 
-        self._ensure_pipeline()
+        # -------------------------------------------------------------- #
+        # Load AI pipeline
+        # -------------------------------------------------------------- #
 
-        if self.pipeline is None:
+        if not self._ensure_pipeline():
+
+            self.latest_state = {
+                "found": False,
+                "status_text": "Drowsiness detection pipeline unavailable",
+                "score": 0,
+                "level": "ALERT",
+                "camera_processing": (
+                    "BROWSER"
+                    if self.is_render
+                    else "LOCAL"
+                )
+            }
+
             return False
 
-        self.pipeline.reset()
+        # -------------------------------------------------------------- #
+        # RENDER / PRODUCTION
+        # -------------------------------------------------------------- #
+
+        if self.is_render:
+
+            print(
+                "[CameraStream] Render detected."
+            )
+
+            print(
+                "[CameraStream] Starting browser/mobile camera mode."
+            )
+
+            return self.start_browser()
+
+        # -------------------------------------------------------------- #
+        # LOCAL DEVELOPMENT
+        # -------------------------------------------------------------- #
+
+        return self.start_local()
+
+    # ================================================================== #
+    # LOCAL WEBCAM
+    # ================================================================== #
+
+    def start_local(self):
+
+        if self.running:
+            return True
+
+        if not self._ensure_pipeline():
+            return False
+
+        try:
+
+            self.pipeline.reset()
+
+        except Exception as exc:
+
+            print(
+                f"[CameraStream] Pipeline reset warning: {exc}"
+            )
 
         self.latest_state = {
             "found": False,
-            "status_text": "Starting..."
+            "status_text": "Starting camera...",
+            "score": 0,
+            "level": "ALERT",
+            "camera_processing": "LOCAL"
         }
 
-        self.cap = cv2.VideoCapture(
-            self.config.CAMERA_INDEX
+        print(
+            f"[CameraStream] Opening local camera index "
+            f"{self.camera_index}"
         )
 
-        self.cap.set(
-            cv2.CAP_PROP_FRAME_WIDTH,
-            self.config.FRAME_WIDTH
-        )
+        try:
 
-        self.cap.set(
-            cv2.CAP_PROP_FRAME_HEIGHT,
-            self.config.FRAME_HEIGHT
-        )
-
-        if not self.cap.isOpened():
-
-            print(
-                "[CameraStream] Could not open local camera "
-                f"(index {self.config.CAMERA_INDEX})"
+            self.cap = cv2.VideoCapture(
+                self.camera_index
             )
 
-            self.cap.release()
+            self.cap.set(
+                cv2.CAP_PROP_FRAME_WIDTH,
+                self.frame_width
+            )
+
+            self.cap.set(
+                cv2.CAP_PROP_FRAME_HEIGHT,
+                self.frame_height
+            )
+
+        except Exception as exc:
+
+            print(
+                f"[CameraStream] Camera initialization error: {exc}"
+            )
+
             self.cap = None
+            return False
+
+        if self.cap is None or not self.cap.isOpened():
+
+            print(
+                "[CameraStream] Could not open local camera."
+            )
+
+            if self.cap is not None:
+
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+
+            self.cap = None
+
+            self.latest_state = {
+                "found": False,
+                "status_text": "Could not open local camera",
+                "score": 0,
+                "level": "ALERT",
+                "camera_processing": "LOCAL"
+            }
 
             return False
 
@@ -128,58 +353,92 @@ class CameraStream:
 
         self.thread.start()
 
+        print(
+            "[CameraStream] Local camera started."
+        )
+
         return True
 
-    # ------------------------------------------------------------------ #
-    # BROWSER / MOBILE MODE
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # BROWSER / MOBILE CAMERA
+    # ================================================================== #
+
     def start_browser(self):
+
         """
-        Start a browser/mobile camera session.
+        Start browser/mobile camera session.
 
         IMPORTANT:
-        This does NOT access a physical camera on the server.
+        This function does NOT access a physical camera.
+        The browser/mobile device sends frames using
+        process_browser_frame().
         """
 
-        self._ensure_pipeline()
-
-        if self.pipeline is None:
+        if not self._ensure_pipeline():
             return False
 
-        self.pipeline.reset()
+        try:
+
+            self.pipeline.reset()
+
+        except Exception as exc:
+
+            print(
+                f"[CameraStream] Pipeline reset warning: {exc}"
+            )
 
         with self.lock:
+
             self.browser_mode = True
             self.running = True
+
             self._jpeg = None
 
             self.latest_state = {
                 "found": False,
-                "status_text": "Waiting for camera..."
+                "status_text": "Waiting for browser camera...",
+                "score": 0,
+                "level": "ALERT",
+                "camera_processing": "BROWSER"
             }
+
+        print(
+            "[CameraStream] Browser/mobile camera session started."
+        )
 
         return True
 
-    # ------------------------------------------------------------------ #
-    def process_browser_frame(self, image_data):
-        """
-        Process one JPEG frame sent from the browser/mobile device.
+    # ================================================================== #
+    # PROCESS BROWSER FRAME
+    # ================================================================== #
 
-        Accepts:
+    def process_browser_frame(self, image_data):
+
+        """
+        Process one JPEG frame received from browser/mobile.
+
+        Accepted formats:
+
             data:image/jpeg;base64,...
+
         or:
+
             raw base64 JPEG
         """
 
         if not image_data:
+
             return {
                 "ok": False,
                 "error": "Empty camera frame"
             }
 
-        self._ensure_pipeline()
+        # -------------------------------------------------------------- #
+        # Ensure pipeline
+        # -------------------------------------------------------------- #
 
-        if self.pipeline is None:
+        if not self._ensure_pipeline():
+
             return {
                 "ok": False,
                 "error": "AI pipeline unavailable"
@@ -187,29 +446,66 @@ class CameraStream:
 
         try:
 
-            # Remove data URL prefix.
-            if "," in image_data:
-                image_data = image_data.split(",", 1)[1]
+            # ---------------------------------------------------------- #
+            # Remove data URL prefix
+            # ---------------------------------------------------------- #
 
-            raw = base64.b64decode(
-                image_data,
-                validate=True
-            )
+            if "," in image_data:
+
+                image_data = image_data.split(
+                    ",",
+                    1
+                )[1]
+
+            # ---------------------------------------------------------- #
+            # Decode base64
+            # ---------------------------------------------------------- #
+
+            try:
+
+                raw = base64.b64decode(
+                    image_data,
+                    validate=True
+                )
+
+            except Exception:
+
+                return {
+                    "ok": False,
+                    "error": "Invalid base64 camera frame"
+                }
+
+            # ---------------------------------------------------------- #
+            # Protect server from huge frames
+            # ---------------------------------------------------------- #
 
             max_bytes = (
-                self.config.MAX_CAMERA_FRAME_KB * 1024
+                self.max_camera_frame_kb
+                * 1024
             )
 
             if len(raw) > max_bytes:
+
                 return {
                     "ok": False,
-                    "error": "Camera frame too large"
+                    "error": (
+                        "Camera frame too large. "
+                        f"Maximum {self.max_camera_frame_kb} KB."
+                    )
                 }
+
+            # ---------------------------------------------------------- #
+            # Convert bytes -> NumPy
+            # ---------------------------------------------------------- #
 
             array = np.frombuffer(
                 raw,
                 dtype=np.uint8
             )
+
+            # ---------------------------------------------------------- #
+            # JPEG -> OpenCV frame
+            # ---------------------------------------------------------- #
 
             frame = cv2.imdecode(
                 array,
@@ -217,34 +513,44 @@ class CameraStream:
             )
 
             if frame is None:
+
                 return {
                     "ok": False,
-                    "error": "Invalid camera frame"
+                    "error": "Invalid JPEG camera frame"
                 }
 
             # ---------------------------------------------------------- #
-            # Resize large mobile frames.
+            # Resize large mobile frames
             # ---------------------------------------------------------- #
+
             height, width = frame.shape[:2]
 
-            max_width = self.config.FRAME_WIDTH
+            if width > self.frame_width:
 
-            if width > max_width:
+                scale = (
+                    self.frame_width
+                    / float(width)
+                )
 
-                scale = max_width / float(width)
+                new_width = self.frame_width
+
+                new_height = int(
+                    height * scale
+                )
 
                 frame = cv2.resize(
                     frame,
                     (
-                        int(width * scale),
-                        int(height * scale)
+                        new_width,
+                        new_height
                     ),
                     interpolation=cv2.INTER_AREA
                 )
 
             # ---------------------------------------------------------- #
-            # Existing AI pipeline.
+            # Process with AI
             # ---------------------------------------------------------- #
+
             annotated, state = (
                 self.pipeline.process_frame(
                     frame,
@@ -253,18 +559,20 @@ class CameraStream:
             )
 
             # ---------------------------------------------------------- #
-            # Encode processed frame.
+            # Encode annotated image
             # ---------------------------------------------------------- #
+
             ok, buffer = cv2.imencode(
                 ".jpg",
                 annotated,
                 [
                     cv2.IMWRITE_JPEG_QUALITY,
-                    self.config.CAMERA_JPEG_QUALITY
+                    self.camera_jpeg_quality
                 ]
             )
 
             if not ok:
+
                 return {
                     "ok": False,
                     "error": "Could not encode processed frame"
@@ -272,27 +580,47 @@ class CameraStream:
 
             jpeg = buffer.tobytes()
 
+            # ---------------------------------------------------------- #
+            # Base64 response for browser
+            # ---------------------------------------------------------- #
+
             frame_b64 = base64.b64encode(
                 jpeg
             ).decode("ascii")
 
+            # ---------------------------------------------------------- #
+            # Update shared state
+            # ---------------------------------------------------------- #
+
             with self.lock:
 
                 self._jpeg = jpeg
-                self.latest_state = state
+
+                self.latest_state = dict(
+                    state or {}
+                )
+
+                self.latest_state[
+                    "camera_processing"
+                ] = "BROWSER"
+
                 self.browser_mode = True
                 self.running = True
 
             return {
                 "ok": True,
-                "state": state,
+                "state": self.latest_state,
                 "frame": frame_b64
             }
 
         except Exception as exc:
 
             print(
-                f"[CameraStream] Browser frame error: {exc}"
+                "[CameraStream] Browser frame processing error:"
+            )
+
+            print(
+                repr(exc)
             )
 
             return {
@@ -300,32 +628,93 @@ class CameraStream:
                 "error": str(exc)
             }
 
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # STOP
+    # ================================================================== #
+
     def stop(self):
+
+        print(
+            "[CameraStream] Stopping camera..."
+        )
 
         self.running = False
 
+        # -------------------------------------------------------------- #
+        # Stop local camera thread
+        # -------------------------------------------------------------- #
+
         if self.thread is not None:
 
-            self.thread.join(
-                timeout=1.0
-            )
+            try:
+
+                self.thread.join(
+                    timeout=1.0
+                )
+
+            except Exception:
+                pass
 
             self.thread = None
 
+        # -------------------------------------------------------------- #
+        # Release local camera
+        # -------------------------------------------------------------- #
+
         if self.cap is not None:
 
-            self.cap.release()
+            try:
+
+                self.cap.release()
+
+            except Exception:
+                pass
+
             self.cap = None
 
+        # -------------------------------------------------------------- #
+        # Reset mode
+        # -------------------------------------------------------------- #
+
         with self.lock:
+
             self.browser_mode = False
 
-    # ------------------------------------------------------------------ #
+            self._jpeg = None
+
+            self.latest_state = {
+                "found": False,
+                "status_text": "Idle",
+                "score": 0,
+                "level": "ALERT",
+                "camera_processing": (
+                    "BROWSER"
+                    if self.is_render
+                    else "LOCAL"
+                )
+            }
+
+        print(
+            "[CameraStream] Camera stopped."
+        )
+
+    # ================================================================== #
+    # RESET
+    # ================================================================== #
+
     def reset(self):
 
         if self.pipeline is not None:
-            self.pipeline.reset()
+
+            try:
+
+                self.pipeline.reset()
+
+            except Exception as exc:
+
+                print(
+                    f"[CameraStream] Pipeline reset error: {exc}"
+                )
 
         with self.lock:
 
@@ -333,10 +722,20 @@ class CameraStream:
 
             self.latest_state = {
                 "found": False,
-                "status_text": "Idle"
+                "status_text": "Idle",
+                "score": 0,
+                "level": "ALERT",
+                "camera_processing": (
+                    "BROWSER"
+                    if self.is_render
+                    else "LOCAL"
+                )
             }
 
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # SESSION SUMMARY
+    # ================================================================== #
+
     def session_summary(self):
 
         if (
@@ -346,13 +745,23 @@ class CameraStream:
                 "session_summary"
             )
         ):
-            return self.pipeline.session_summary()
+
+            try:
+
+                return self.pipeline.session_summary()
+
+            except Exception as exc:
+
+                print(
+                    f"[CameraStream] Session summary error: {exc}"
+                )
 
         return {}
 
-    # ------------------------------------------------------------------ #
-    # LOCAL WEBCAM LOOP
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # LOCAL CAMERA LOOP
+    # ================================================================== #
+
     def _loop(self):
 
         while (
@@ -360,45 +769,75 @@ class CameraStream:
             and self.cap is not None
         ):
 
-            ok, frame = self.cap.read()
+            try:
 
-            if not ok:
+                ok, frame = self.cap.read()
 
-                time.sleep(0.02)
-                continue
+                if not ok:
 
-            frame = cv2.flip(
-                frame,
-                1
-            )
+                    time.sleep(0.02)
+                    continue
 
-            annotated, state = (
-                self.pipeline.process_frame(
+                # Mirror webcam
+                frame = cv2.flip(
                     frame,
-                    draw=True
+                    1
                 )
-            )
 
-            ok, buffer = cv2.imencode(
-                ".jpg",
-                annotated,
-                [
-                    cv2.IMWRITE_JPEG_QUALITY,
-                    self.config.CAMERA_JPEG_QUALITY
-                ]
-            )
+                # AI processing
+                annotated, state = (
+                    self.pipeline.process_frame(
+                        frame,
+                        draw=True
+                    )
+                )
 
-            if ok:
+                # JPEG encode
+                ok, buffer = cv2.imencode(
+                    ".jpg",
+                    annotated,
+                    [
+                        cv2.IMWRITE_JPEG_QUALITY,
+                        self.camera_jpeg_quality
+                    ]
+                )
 
-                with self.lock:
+                if ok:
 
-                    self._jpeg = buffer.tobytes()
-                    self.latest_state = state
+                    with self.lock:
 
-            time.sleep(0.005)
+                        self._jpeg = (
+                            buffer.tobytes()
+                        )
 
-    # ------------------------------------------------------------------ #
+                        self.latest_state = dict(
+                            state or {}
+                        )
+
+                        self.latest_state[
+                            "camera_processing"
+                        ] = "LOCAL"
+
+                time.sleep(0.005)
+
+            except Exception as exc:
+
+                print(
+                    "[CameraStream] Local camera loop error:"
+                )
+
+                print(
+                    repr(exc)
+                )
+
+                time.sleep(0.1)
+
+    # ================================================================== #
+    # GET LATEST JPEG
+    # ================================================================== #
+
     def get_annotated_jpeg(self):
 
         with self.lock:
+
             return self._jpeg
