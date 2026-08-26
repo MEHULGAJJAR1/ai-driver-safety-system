@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+*.egg-info/
+
+# App data
+uploads/*
+!uploads/.gitkeep
+database/events.db
+models/*.h5
+models/*.keras
+
+# Event logs (portable JSONL/CSV - Feature 17)
+logs/
+*.jsonl
+
+# Firebase / mobile push credentials - NEVER commit these (Feature 18/19)
+firebase-credentials.json
+*serviceAccount*.json
+.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log

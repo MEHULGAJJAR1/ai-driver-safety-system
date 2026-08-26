@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Live Monitor &middot; Drowsiness Detection{% endblock %}
+{% block nav_live %}active{% endblock %}
+
+{% block content %}
+<div id="breakBanner" class="break-banner hidden">
+  <span class="bb-icon">&#9749;</span>
+  <span id="breakText">Take a short break.</span>
+  <button id="breakDismiss" class="bb-x" aria-label="dismiss">&times;</button>
+</div>
+
+<div class="grid">
+  <!-- ---------------- Video column ---------------- -->
+  <section class="card video-card">
+    <div class="card-head">
+      <h2>Live Camera</h2>
+      <div class="head-badges">
+        <span id="privacyBadge" class="badge badge-privacy"
+              title="All video is processed on-device. Nothing is uploaded or recorded.">
+          &#128274; LOCAL &middot; REC OFF
+        </span>
+        <span id="cnnBadge" class="badge {{ 'badge-on' if cnn_active else 'badge-off' }}">
+          CNN {{ 'ON' if cnn_active else 'OFF' }}
+        </span>
+      </div>
+    </div>
+
+    <div class="video-wrap">
+      <img id="videoFeed" alt="camera feed" />
+      <div id="videoPlaceholder" class="video-placeholder">
+        <p>Camera stopped</p>
+        <small>Click <b>Start Camera</b> to begin monitoring.</small>
+      </div>
+      <div id="alarmFlash" class="alarm-flash"></div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn btn-primary">Start Camera</button>
+      <button id="stopBtn" class="btn" disabled>Stop</button>
+      <button id="resetBtn" class="btn">Reset Counters</button>
+      <label class="toggle">
+        <input type="checkbox" id="alarmToggle" checked /> Audio alarm
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="voiceToggle" /> Voice
+      </label>
+    </div>
+  </section>
+
+  <!-- ---------------- Status column ---------------- -->
+  <section class="side">
+    <div id="statusCard" class="card status-card level-alert">
+      <div class="status-label">STATUS</div>
+      <div id="statusText" class="status-text">Idle</div>
+      <div class="score-row">
+        <div class="score-num" id="scoreNum">0</div>
+        <div class="score-cap">/100 drowsiness</div>
+      </div>
+      <div class="score-bar"><div id="scoreFill" class="score-fill"></div></div>
+    </div>
+
+    <div class="card monitor-card">
+      <div class="card-head"><h3>Real-time Monitoring</h3>
+        <span id="activeAlert" class="active-alert hidden"></span>
+      </div>
+      <div class="mon-row"><span>Face</span><b id="stFace" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Eyes</span><b id="stEyes" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Drowsiness</span><b id="stDrowsy" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Attention</span><b id="stAttention" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Sunglasses</span><b id="stGlasses" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Face coverage</span><b id="stCoverage" class="pill st-idle">–</b></div>
+    </div>
+
+    <div class="card metrics-card">
+      <h3>Live Metrics</h3>
+      <div class="metric"><span>EAR (eye openness)</span><b id="mEar">-</b></div>
+      <div class="metric"><span>MAR (mouth/yawn)</span><b id="mMar">-</b></div>
+      <div class="metric"><span>Head pitch</span><b id="mPitch">-</b></div>
+      <div class="metric"><span>Head yaw</span><b id="mYaw">-</b></div>
+      <div class="metric"><span>PERCLOS</span><b id="mPerclos">-</b></div>
+      <div class="metric"><span>CNN P(closed)</span><b id="mCnn">-</b></div>
+    </div>
+
+    <div class="card counters-card">
+      <div class="counter"><div id="cBlink" class="c-num">0</div><div class="c-lbl">Blinks</div></div>
+      <div class="counter"><div id="cYawn" class="c-num">0</div><div class="c-lbl">Yawns</div></div>
+      <div class="counter"><div id="cNod" class="c-num">0</div><div class="c-lbl">Head nods</div></div>
+      <div class="counter alert"><div id="cDrowsy" class="c-num">0</div><div class="c-lbl">Drowsy events</div></div>
+    </div>
+
+    <div class="card safety-card">
+      <div class="card-head"><h3>Driver Safety</h3>
+        <span id="riskPill" class="pill st-idle">RISK –</span>
+      </div>
+      <div class="gauge">
+        <div class="gauge-top"><span>Attention score</span><b id="attNum">–</b></div>
+        <div class="score-bar"><div id="attFill" class="score-fill"></div></div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-top"><span>Safety score</span><b id="safeNum">–</b></div>
+        <div class="score-bar"><div id="safeFill" class="score-fill"></div></div>
+      </div>
+      <div class="mon-row"><span>Distraction timer</span><b id="stDistract" class="pill st-idle">–</b></div>
+      <div class="mon-row"><span>Fatigue trend</span><b id="stFatigue" class="pill st-idle">–</b></div>
+    </div>
+
+    <div class="card system-card">
+      <div class="card-head"><h3>Mobile Alerts</h3>
+        <span id="notifBadge" class="badge badge-off">OFF</span>
+      </div>
+      <div class="metric"><span>Provider</span><b id="notifProvider">–</b></div>
+      <div class="metric"><span>Camera processing</span><b id="camProc">LOCAL</b></div>
+      <div class="metric"><span>Video storage</span><b id="videoStorage">OFF</b></div>
+      <button id="testNotifyBtn" class="btn" style="margin-top:12px;width:100%">
+        Send Test Notification
+      </button>
+      <div id="notifResult" class="muted notif-result"></div>
+    </div>
+  </section>
+</div>
+
+<!-- ---------------- Charts ---------------- -->
+<div class="grid charts">
+  <section class="card">
+    <h3>Drowsiness Score (live)</h3>
+    <div class="chart-box"><canvas id="scoreChart"></canvas></div>
+  </section>
+  <section class="card">
+    <h3>EAR &amp; MAR (live)</h3>
+    <div class="chart-box"><canvas id="earMarChart"></canvas></div>
+  </section>
+</div>
+
+<div class="grid charts">
+  <section class="card">
+    <h3>Attention &amp; Safety (live)</h3>
+    <div class="chart-box"><canvas id="safetyChart"></canvas></div>
+  </section>
+  <section class="card">
+    <h3>Attention Distribution</h3>
+    <div class="chart-box"><canvas id="distChart"></canvas></div>
+  </section>
+</div>
+
+<!-- alarm audio: one distinct sound per alert type (Feature 1/2/4).
+     The AlertManager decides which single sound is active; the browser
+     plays only that one, so two alarms never overlap. -->
+<audio id="sndDrowsiness" src="{{ url_for('static', filename='audio/' ~ config.DROWSINESS_ALARM_FILE) }}" preload="auto" loop></audio>
+<audio id="sndSideLook"   src="{{ url_for('static', filename='audio/' ~ config.SIDE_LOOK_ALARM_FILE) }}" preload="auto" loop></audio>
+<audio id="sndFaceCovered" src="{{ url_for('static', filename='audio/' ~ config.FACE_COVERED_ALARM_FILE) }}" preload="auto" loop></audio>
+<audio id="sndCritical"   src="{{ url_for('static', filename='audio/' ~ config.CRITICAL_ALARM_FILE) }}" preload="auto" loop></audio>
+<!-- legacy element kept for backward compatibility -->
+<audio id="alarmAudio" src="{{ url_for('static', filename='audio/alarm.wav') }}" preload="auto"></audio>
+
+<!-- session summary modal (Feature 16) - shown when the driver stops -->
+<div id="summaryModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="card-head"><h2>Session Summary</h2></div>
+    <div id="summaryBody" class="summary-grid"></div>
+    <div class="modal-actions">
+      <button id="exportCsvBtn" class="btn">Export CSV</button>
+      <button id="exportJsonBtn" class="btn">Export JSON</button>
+      <button id="summaryClose" class="btn btn-primary">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.EAR_THRESHOLD = {{ config.EAR_THRESHOLD }};
+  window.MAR_THRESHOLD = {{ config.MAR_THRESHOLD }};
+  window.ALARM_SOUNDS = {
+    "{{ config.DROWSINESS_ALARM_FILE }}": "sndDrowsiness",
+    "{{ config.SIDE_LOOK_ALARM_FILE }}": "sndSideLook",
+    "{{ config.FACE_COVERED_ALARM_FILE }}": "sndFaceCovered",
+    "{{ config.CRITICAL_ALARM_FILE }}": "sndCritical"
+  };
+  window.VOICE_ENABLED = {{ 'true' if config.VOICE_ALERT_ENABLED else 'false' }};
+  window.VOICE_COOLDOWN = {{ config.VOICE_ALERT_COOLDOWN }};
+</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

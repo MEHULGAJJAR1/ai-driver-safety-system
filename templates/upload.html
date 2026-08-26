@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Analyze File &middot; Drowsiness Detection{% endblock %}
+{% block nav_upload %}active{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head"><h2>Analyze a Video or Image</h2></div>
+  <p class="muted">
+    Upload a recorded clip or photo of a driver's face. Every frame is run
+    through the same EAR / MAR / head-pose (and CNN) pipeline used live, and
+    you get a drowsiness summary back. Supported: mp4, avi, mov, mkv, webm,
+    jpg, png (max {{ config.MAX_CONTENT_MB }} MB).
+  </p>
+
+  <form id="uploadForm" class="upload-form">
+    <input type="file" id="fileInput" name="file"
+           accept=".mp4,.avi,.mov,.mkv,.webm,.jpg,.jpeg,.png,.bmp" required />
+    <button type="submit" class="btn btn-primary">Analyze</button>
+  </form>
+
+  <div id="progress" class="progress hidden">
+    <div class="spinner"></div><span>Analyzing&hellip; this can take a moment for long videos.</span>
+  </div>
+  <div id="uploadError" class="error hidden"></div>
+</section>
+
+<section id="results" class="hidden">
+  <div class="grid">
+    <div class="card">
+      <div class="card-head"><h3>Verdict</h3></div>
+      <div id="verdict" class="verdict">-</div>
+      <div class="metric"><span>Frames analyzed</span><b id="rFrames">-</b></div>
+      <div class="metric"><span>Faces found</span><b id="rFaces">-</b></div>
+      <div class="metric"><span>Max score</span><b id="rMax">-</b></div>
+      <div class="metric"><span>Avg score</span><b id="rAvg">-</b></div>
+      <div class="metric"><span>Min EAR</span><b id="rMinEar">-</b></div>
+      <div class="metric"><span>Drowsy episodes</span><b id="rDrowsy">-</b></div>
+      <div class="metric"><span>Yawns</span><b id="rYawn">-</b></div>
+      <div class="metric"><span>Head nods</span><b id="rNod">-</b></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Most drowsy frame</h3></div>
+      <img id="previewImg" class="preview-img" alt="preview" />
+    </div>
+  </div>
+  <section class="card">
+    <h3>Score over time</h3>
+    <div class="chart-box"><canvas id="uploadChart"></canvas></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

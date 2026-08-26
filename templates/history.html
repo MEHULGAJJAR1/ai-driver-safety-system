@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}History &middot; Drowsiness Detection{% endblock %}
+{% block nav_history %}active{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h2>Event History</h2>
+    <button id="clearBtn" class="btn btn-danger">Clear log</button>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div id="sTotal" class="s-num">0</div><div class="s-lbl">Total events</div></div>
+    <div class="stat"><div id="s24h" class="s-num">0</div><div class="s-lbl">Last 24h</div></div>
+    <div class="stat"><div id="sHigh" class="s-num">0</div><div class="s-lbl">High severity</div></div>
+    <div class="stat"><div id="sYawn" class="s-num">0</div><div class="s-lbl">Yawns</div></div>
+  </div>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h3>Events by type</h3>
+    <div class="chart-box"><canvas id="typeChart"></canvas></div>
+  </section>
+  <section class="card">
+    <h3>Events over the last 24h</h3>
+    <div class="chart-box"><canvas id="timelineChart"></canvas></div>
+  </section>
+</div>
+
+<section class="card">
+  <h3>Recent events</h3>
+  <div class="table-wrap">
+    <table class="events-table">
+      <thead>
+        <tr><th>Time</th><th>Type</th><th>Severity</th><th>Message</th>
+            <th>EAR</th><th>MAR</th><th>Score</th><th>Source</th></tr>
+      </thead>
+      <tbody id="eventsBody">
+        <tr><td colspan="8" class="muted">No events yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+{% endblock %}
