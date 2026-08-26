@@ -1,4 +1,5 @@
 (function () {
+
     "use strict";
 
     // ============================================================
@@ -20,15 +21,15 @@
     const alarmFlash = $("alarmFlash");
     const statusCard = $("statusCard");
 
+
     // ============================================================
-    // BROWSER CAMERA VIDEO
+    // HIDDEN BROWSER CAMERA
     // ============================================================
-    // dashboard.html mein cameraVideo nahi tha.
-    // Isliye hidden video element automatically create kar rahe hain.
 
     let cameraVideo = $("cameraVideo");
 
     if (!cameraVideo) {
+
         cameraVideo = document.createElement("video");
 
         cameraVideo.id = "cameraVideo";
@@ -47,15 +48,38 @@
         document.body.appendChild(cameraVideo);
     }
 
+
     let cameraStream = null;
+
     let running = false;
+
     let processing = false;
+
     let processingTimer = null;
 
     let lastFrameTime = 0;
 
-    // Render Free ke liye 5-6 FPS enough hai
-    const FRAME_INTERVAL = 180;
+
+    // ============================================================
+    // RENDER PERFORMANCE SETTINGS
+    // ============================================================
+
+    // Render Free CPU ke liye intentionally low.
+    // 600ms ~= 1.6 processed frames/sec.
+    const FRAME_INTERVAL = 600;
+
+    // Browser loop sirf check karega.
+    // Actual processing FRAME_INTERVAL control karega.
+    const PROCESS_TIMER_INTERVAL = 100;
+
+
+    // Maximum frame width sent to Render.
+    const MAX_FRAME_WIDTH = 480;
+
+
+    // JPEG quality.
+    const JPEG_QUALITY = 0.55;
+
 
     // ============================================================
     // AUDIO
@@ -67,6 +91,7 @@
     const sndCritical = $("sndCritical");
 
     let currentSound = null;
+
 
     function stopAllAudio() {
 
@@ -80,14 +105,19 @@
             if (!audio) return;
 
             try {
+
                 audio.pause();
                 audio.currentTime = 0;
+
             } catch (e) {}
+
         });
 
         currentSound = null;
 
+
         if (alarmFlash) {
+
             alarmFlash.classList.remove(
                 "on",
                 "warn",
@@ -95,6 +125,7 @@
             );
         }
     }
+
 
     function unlockAudio() {
 
@@ -128,7 +159,6 @@
                             audio.muted = false;
 
                         });
-
                 }
 
             } catch (e) {
@@ -139,29 +169,46 @@
         });
     }
 
+
     function playAlertSound(state) {
 
-        if (!alarmToggle || !alarmToggle.checked) {
+        if (
+            !alarmToggle ||
+            !alarmToggle.checked
+        ) {
+
             stopAllAudio();
             return;
         }
 
-        if (!state || !state.alert_active) {
+
+        if (
+            !state ||
+            !state.alert_active
+        ) {
+
             stopAllAudio();
             return;
         }
+
 
         let desired = null;
 
-        const type = String(
-            state.alert_type || ""
-        ).toUpperCase();
+        const type =
+            String(
+                state.alert_type || ""
+            ).toUpperCase();
 
-        if (type.includes("CRITICAL")) {
+
+        if (
+            type.includes("CRITICAL")
+        ) {
 
             desired = sndCritical;
 
-        } else if (type.includes("SIDE_LOOK")) {
+        } else if (
+            type.includes("SIDE_LOOK")
+        ) {
 
             desired = sndSideLook;
 
@@ -177,31 +224,60 @@
             desired = sndDrowsiness;
         }
 
+
         if (!desired) {
+
             stopAllAudio();
             return;
         }
 
-        if (desired === currentSound) {
+
+        if (
+            desired === currentSound
+        ) {
+
+            if (alarmFlash) {
+
+                alarmFlash.classList.add("on");
+
+                alarmFlash.classList.toggle(
+                    "warn",
+                    type.includes("SIDE_LOOK")
+                );
+
+                alarmFlash.classList.toggle(
+                    "crit",
+                    type.includes("CRITICAL")
+                );
+            }
+
             return;
         }
 
+
         stopAllAudio();
+
 
         try {
 
             desired.loop = true;
             desired.currentTime = 0;
 
-            const promise = desired.play();
+            const promise =
+                desired.play();
 
-            if (promise && promise.catch) {
+            if (
+                promise &&
+                promise.catch
+            ) {
+
                 promise.catch(() => {});
             }
 
             currentSound = desired;
 
         } catch (e) {}
+
 
         if (alarmFlash) {
 
@@ -219,6 +295,7 @@
         }
     }
 
+
     if (alarmToggle) {
 
         alarmToggle.addEventListener(
@@ -226,12 +303,13 @@
             function () {
 
                 if (!alarmToggle.checked) {
+
                     stopAllAudio();
                 }
-
             }
         );
     }
+
 
     // ============================================================
     // BROWSER CAMERA
@@ -249,7 +327,7 @@
             );
         }
 
-        // HTTPS required.
+
         if (
             location.protocol !== "https:" &&
             location.hostname !== "localhost" &&
@@ -257,14 +335,16 @@
         ) {
 
             throw new Error(
-                "Camera requires HTTPS. Open the Render HTTPS URL."
+                "Camera requires HTTPS. Please open the Render HTTPS URL."
             );
         }
+
 
         const stream =
             await navigator.mediaDevices.getUserMedia({
 
                 video: {
+
                     facingMode: "user",
 
                     width: {
@@ -279,23 +359,29 @@
 
                     frameRate: {
                         ideal: 15,
-                        max: 24
+                        max: 20
                     }
+
                 },
 
                 audio: false
             });
+
 
         cameraStream = stream;
 
         cameraVideo.srcObject = stream;
 
         cameraVideo.muted = true;
+
         cameraVideo.playsInline = true;
+
         cameraVideo.autoplay = true;
+
 
         await cameraVideo.play();
     }
+
 
     function closeBrowserCamera() {
 
@@ -306,7 +392,9 @@
                 .forEach((track) => {
 
                     try {
+
                         track.stop();
+
                     } catch (e) {}
 
                 });
@@ -314,15 +402,20 @@
             cameraStream = null;
         }
 
+
         if (cameraVideo) {
 
             try {
+
                 cameraVideo.pause();
+
             } catch (e) {}
+
 
             cameraVideo.srcObject = null;
         }
     }
+
 
     // ============================================================
     // START CAMERA
@@ -338,29 +431,38 @@
                     return;
                 }
 
+
                 startBtn.disabled = true;
+
 
                 try {
 
-                    // Browser user gesture -> unlock alarm audio
                     unlockAudio();
 
-                    // IMPORTANT:
-                    // Camera is opened on USER'S laptop/mobile.
-                    // Render server camera is NOT used.
+
+                    // ------------------------------------------------
+                    // CAMERA IS ON USER DEVICE
+                    // ------------------------------------------------
+
                     await openBrowserCamera();
 
-                    // Tell Flask to start browser mode.
+
+                    // ------------------------------------------------
+                    // START SERVER SESSION
+                    // ------------------------------------------------
+
                     const response =
                         await fetch(
                             "/api/camera/start",
                             {
                                 method: "POST",
                                 headers: {
-                                    "Accept": "application/json"
+                                    "Accept":
+                                        "application/json"
                                 }
                             }
                         );
+
 
                     if (!response.ok) {
 
@@ -369,8 +471,10 @@
                         );
                     }
 
+
                     const result =
                         await response.json();
+
 
                     if (!result.ok) {
 
@@ -380,28 +484,49 @@
                         );
                     }
 
+
                     running = true;
+
+                    processing = false;
+
                     lastFrameTime = 0;
 
-                    // Actual browser camera stays hidden.
-                    cameraVideo.style.display = "none";
 
-                    // Processed frame appears here.
+                    // ------------------------------------------------
+                    // UI
+                    // ------------------------------------------------
+
+                    cameraVideo.style.display =
+                        "none";
+
+
                     if (feed) {
-                        feed.style.display = "block";
+
+                        feed.style.display =
+                            "block";
                     }
+
 
                     if (placeholder) {
-                        placeholder.style.display = "none";
+
+                        placeholder.style.display =
+                            "none";
                     }
+
 
                     if (stopBtn) {
-                        stopBtn.disabled = false;
+
+                        stopBtn.disabled =
+                            false;
                     }
 
-                    startBtn.disabled = true;
+
+                    startBtn.disabled =
+                        true;
+
 
                     startProcessing();
+
 
                 } catch (error) {
 
@@ -410,33 +535,56 @@
                         error
                     );
 
+
                     running = false;
 
+                    processing = false;
+
+
                     stopProcessing();
+
                     closeBrowserCamera();
+
                     stopAllAudio();
 
+
                     if (placeholder) {
-                        placeholder.style.display = "block";
+
+                        placeholder.style.display =
+                            "block";
 
                         const p =
                             placeholder.querySelector("p");
 
                         if (p) {
-                            p.textContent = "Camera stopped";
+
+                            p.textContent =
+                                "Camera stopped";
                         }
                     }
 
+
                     if (feed) {
-                        feed.style.display = "none";
-                        feed.removeAttribute("src");
+
+                        feed.style.display =
+                            "none";
+
+                        feed.removeAttribute(
+                            "src"
+                        );
                     }
+
 
                     if (stopBtn) {
-                        stopBtn.disabled = true;
+
+                        stopBtn.disabled =
+                            true;
                     }
 
-                    startBtn.disabled = false;
+
+                    startBtn.disabled =
+                        false;
+
 
                     alert(
                         "Could not open the camera.\n\n" +
@@ -448,6 +596,7 @@
             }
         );
     }
+
 
     // ============================================================
     // STOP CAMERA
@@ -461,11 +610,15 @@
 
                 running = false;
 
+                processing = false;
+
+
                 stopProcessing();
 
                 closeBrowserCamera();
 
                 stopAllAudio();
+
 
                 try {
 
@@ -474,38 +627,55 @@
                         {
                             method: "POST",
                             headers: {
-                                "Accept": "application/json"
+                                "Accept":
+                                    "application/json"
                             }
                         }
                     );
 
                 } catch (e) {}
 
+
                 if (feed) {
 
-                    feed.style.display = "none";
-                    feed.removeAttribute("src");
+                    feed.style.display =
+                        "none";
+
+                    feed.removeAttribute(
+                        "src"
+                    );
                 }
+
 
                 if (placeholder) {
 
-                    placeholder.style.display = "block";
+                    placeholder.style.display =
+                        "block";
 
                     const p =
                         placeholder.querySelector("p");
 
                     if (p) {
-                        p.textContent = "Camera stopped";
+
+                        p.textContent =
+                            "Camera stopped";
                     }
                 }
 
+
                 if (stopBtn) {
-                    stopBtn.disabled = true;
+
+                    stopBtn.disabled =
+                        true;
                 }
 
+
                 if (startBtn) {
-                    startBtn.disabled = false;
+
+                    startBtn.disabled =
+                        false;
                 }
+
 
                 try {
 
@@ -518,12 +688,14 @@
 
                 } catch (e) {}
 
+
                 await showSessionSummary();
 
                 resetMonitor();
             }
         );
     }
+
 
     // ============================================================
     // RESET
@@ -542,16 +714,17 @@
                         {
                             method: "POST",
                             headers: {
-                                "Accept": "application/json"
+                                "Accept":
+                                    "application/json"
                             }
                         }
                     );
 
                 } catch (e) {}
-
             }
         );
     }
+
 
     // ============================================================
     // FRAME CAPTURE
@@ -560,13 +733,18 @@
     const captureCanvas =
         document.createElement("canvas");
 
+
     const canvasContext =
-        captureCanvas.getContext("2d", {
-            willReadFrequently: false
-        });
+        captureCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: false
+            }
+        );
+
 
     // ============================================================
-    // SEND BROWSER FRAME TO FLASK
+    // PROCESS BROWSER FRAME
     // ============================================================
 
     async function processBrowserFrame() {
@@ -575,42 +753,58 @@
             return;
         }
 
+
         if (processing) {
             return;
         }
+
 
         if (!cameraVideo) {
             return;
         }
 
+
         if (
             !cameraVideo.videoWidth ||
             !cameraVideo.videoHeight
         ) {
+
             return;
         }
 
-        const now = Date.now();
+
+        const now =
+            Date.now();
+
 
         if (
             now - lastFrameTime <
             FRAME_INTERVAL
         ) {
+
             return;
         }
 
-        lastFrameTime = now;
+
+        lastFrameTime =
+            now;
+
 
         processing = true;
 
+
         try {
 
-            // Keep frame small for Render Free.
+            // --------------------------------------------------------
+            // LOW RESOLUTION FOR RENDER
+            // --------------------------------------------------------
+
             const width =
                 Math.min(
                     cameraVideo.videoWidth,
-                    640
+                    MAX_FRAME_WIDTH
                 );
+
 
             const height =
                 Math.round(
@@ -621,8 +815,17 @@
                     )
                 );
 
-            captureCanvas.width = width;
-            captureCanvas.height = height;
+
+            captureCanvas.width =
+                width;
+
+            captureCanvas.height =
+                height;
+
+
+            // --------------------------------------------------------
+            // COPY CAMERA FRAME
+            // --------------------------------------------------------
 
             canvasContext.drawImage(
                 cameraVideo,
@@ -632,6 +835,11 @@
                 height
             );
 
+
+            // --------------------------------------------------------
+            // JPEG
+            // --------------------------------------------------------
+
             const blob =
                 await new Promise(
                     (resolve) => {
@@ -639,31 +847,31 @@
                         captureCanvas.toBlob(
                             resolve,
                             "image/jpeg",
-                            0.65
+                            JPEG_QUALITY
                         );
-
                     }
                 );
+
 
             if (!blob) {
                 return;
             }
 
-            // ====================================================
-            // IMPORTANT
-            // Send multipart JPEG to Flask.
-            // app.py should pass it to:
-            // camera.process_browser_frame(...)
-            // ====================================================
+
+            // --------------------------------------------------------
+            // SEND TO FLASK
+            // --------------------------------------------------------
 
             const formData =
                 new FormData();
+
 
             formData.append(
                 "frame",
                 blob,
                 "camera.jpg"
             );
+
 
             const response =
                 await fetch(
@@ -673,6 +881,7 @@
                         body: formData
                     }
                 );
+
 
             if (!response.ok) {
 
@@ -684,8 +893,10 @@
                 return;
             }
 
+
             const result =
                 await response.json();
+
 
             if (!result.ok) {
 
@@ -697,21 +908,19 @@
                 return;
             }
 
-            // ====================================================
+
+            // --------------------------------------------------------
             // PROCESSED IMAGE
-            // ====================================================
+            // --------------------------------------------------------
 
             if (
                 result.image &&
                 feed
             ) {
 
-                // Backend can return:
-                // data:image/jpeg;base64,...
-                // OR plain base64.
-
                 let imageSrc =
                     result.image;
+
 
                 if (
                     !String(imageSrc)
@@ -723,13 +932,15 @@
                         imageSrc;
                 }
 
+
                 feed.src =
                     imageSrc;
             }
 
-            // ====================================================
+
+            // --------------------------------------------------------
             // STATE
-            // ====================================================
+            // --------------------------------------------------------
 
             if (result.state) {
 
@@ -737,6 +948,19 @@
                     result.state
                 );
             }
+
+
+            // --------------------------------------------------------
+            // DEBUG
+            // --------------------------------------------------------
+            // Browser console mein actual backend state dekhne ke
+            // liye useful hai.
+
+            console.log(
+                "[AI STATE]",
+                result.state
+            );
+
 
         } catch (error) {
 
@@ -751,6 +975,7 @@
         }
     }
 
+
     // ============================================================
     // PROCESSING LOOP
     // ============================================================
@@ -759,12 +984,14 @@
 
         stopProcessing();
 
+
         processingTimer =
             setInterval(
                 processBrowserFrame,
-                50
+                PROCESS_TIMER_INTERVAL
             );
     }
+
 
     function stopProcessing() {
 
@@ -778,6 +1005,7 @@
         }
     }
 
+
     // ============================================================
     // UI UPDATE
     // ============================================================
@@ -788,45 +1016,56 @@
             return;
         }
 
+
         // --------------------------------------------------------
-        // Metrics
+        // METRICS
         // --------------------------------------------------------
 
         if ($("mEar")) {
+
             $("mEar").textContent =
                 fmt(s.ear);
         }
 
+
         if ($("mMar")) {
+
             $("mMar").textContent =
                 fmt(s.mar);
         }
+
 
         if ($("mPitch")) {
 
             $("mPitch").textContent =
                 s.pitch != null
-                    ? Number(s.pitch).toFixed(0) + "°"
+                    ? Number(s.pitch)
+                        .toFixed(0) + "°"
                     : "-";
         }
+
 
         if ($("mYaw")) {
 
             $("mYaw").textContent =
                 s.yaw != null
-                    ? Number(s.yaw).toFixed(0) + "°"
+                    ? Number(s.yaw)
+                        .toFixed(0) + "°"
                     : "-";
         }
+
 
         if ($("mPerclos")) {
 
             $("mPerclos").textContent =
                 s.perclos != null
                     ? (
-                        Number(s.perclos) * 100
+                        Number(s.perclos) *
+                        100
                     ).toFixed(0) + "%"
                     : "-";
         }
+
 
         if ($("mCnn")) {
 
@@ -838,32 +1077,49 @@
                     : "n/a";
         }
 
+
         // --------------------------------------------------------
-        // Counters
+        // COUNTERS
         // --------------------------------------------------------
 
         if ($("cBlink")) {
+
             $("cBlink").textContent =
-                s.blink_count || 0;
+                Number(
+                    s.blink_count || 0
+                );
         }
+
 
         if ($("cYawn")) {
+
             $("cYawn").textContent =
-                s.yawn_count || 0;
+                Number(
+                    s.yawn_count || 0
+                );
         }
+
 
         if ($("cNod")) {
+
             $("cNod").textContent =
-                s.nod_count || 0;
+                Number(
+                    s.nod_count || 0
+                );
         }
+
 
         if ($("cDrowsy")) {
+
             $("cDrowsy").textContent =
-                s.drowsy_events || 0;
+                Number(
+                    s.drowsy_events || 0
+                );
         }
 
+
         // --------------------------------------------------------
-        // Status
+        // STATUS
         // --------------------------------------------------------
 
         const level =
@@ -871,18 +1127,22 @@
                 s.level || "ALERT"
             ).toLowerCase();
 
+
         setLevel(
             level,
             s.status_text || "-",
             s.score || 0
         );
 
+
         // --------------------------------------------------------
-        // Panels
+        // PANELS
         // --------------------------------------------------------
 
         updateMonitor(s);
+
         updateSafety(s);
+
         updateMobile(s);
 
         playAlertSound(s);
@@ -893,6 +1153,7 @@
 
         updateCharts(s);
     }
+
 
     // ============================================================
     // STATUS
@@ -908,15 +1169,18 @@
             return;
         }
 
+
         statusCard.className =
             "card status-card level-" +
             level;
+
 
         if ($("statusText")) {
 
             $("statusText").textContent =
                 text;
         }
+
 
         if ($("scoreNum")) {
 
@@ -926,8 +1190,10 @@
                 );
         }
 
+
         const fill =
             $("scoreFill");
+
 
         if (fill) {
 
@@ -940,10 +1206,14 @@
                     )
                 );
 
+
             fill.style.width =
                 value + "%";
 
-            if (level === "drowsy") {
+
+            if (
+                level === "drowsy"
+            ) {
 
                 fill.style.background =
                     "#ef4444";
@@ -963,8 +1233,9 @@
         }
     }
 
+
     // ============================================================
-    // PILLS
+    // PILL
     // ============================================================
 
     function pill(
@@ -977,13 +1248,16 @@
             return;
         }
 
+
         element.textContent =
             text;
+
 
         element.className =
             "pill st-" +
             state;
     }
+
 
     // ============================================================
     // MONITOR
@@ -993,6 +1267,7 @@
 
         const face =
             !!s.face_detected;
+
 
         pill(
             $("stFace"),
@@ -1004,7 +1279,11 @@
                 : "alert"
         );
 
-        // Eyes
+
+        // --------------------------------------------------------
+        // EYES
+        // --------------------------------------------------------
+
         if (!face) {
 
             pill(
@@ -1026,7 +1305,11 @@
             );
         }
 
-        // Drowsiness
+
+        // --------------------------------------------------------
+        // DROWSINESS
+        // --------------------------------------------------------
+
         if (s.drowsiness) {
 
             pill(
@@ -1036,8 +1319,9 @@
             );
 
         } else if (
-            String(s.level || "")
-                .toUpperCase() ===
+            String(
+                s.level || ""
+            ).toUpperCase() ===
             "WARNING"
         ) {
 
@@ -1060,9 +1344,14 @@
             );
         }
 
-        // Attention
+
+        // --------------------------------------------------------
+        // ATTENTION
+        // --------------------------------------------------------
+
         const attention =
             s.attention;
+
 
         if (
             attention === "left"
@@ -1104,7 +1393,11 @@
             );
         }
 
-        // Sunglasses
+
+        // --------------------------------------------------------
+        // SUNGLASSES
+        // --------------------------------------------------------
+
         if (!face) {
 
             pill(
@@ -1126,7 +1419,11 @@
             );
         }
 
-        // Face coverage
+
+        // --------------------------------------------------------
+        // FACE COVERAGE
+        // --------------------------------------------------------
+
         const coverageMap = {
 
             clear: [
@@ -1150,6 +1447,7 @@
             ]
         };
 
+
         const item =
             coverageMap[
                 s.face_coverage
@@ -1158,12 +1456,14 @@
                 "idle"
             ];
 
+
         pill(
             $("stCoverage"),
             item[0],
             item[1]
         );
     }
+
 
     // ============================================================
     // SAFETY
@@ -1178,13 +1478,16 @@
                 : "#ef4444";
     }
 
+
     function updateSafety(s) {
 
         const attention =
             s.attention_score;
 
+
         const safety =
             s.safety_score;
+
 
         if (
             attention != null &&
@@ -1193,7 +1496,10 @@
         ) {
 
             $("attNum").textContent =
-                Math.round(attention);
+                Math.round(
+                    Number(attention)
+                );
+
 
             $("attFill").style.width =
                 Math.max(
@@ -1204,11 +1510,13 @@
                     )
                 ) + "%";
 
+
             $("attFill").style.background =
                 scoreColor(
                     Number(attention)
                 );
         }
+
 
         if (
             safety != null &&
@@ -1217,7 +1525,10 @@
         ) {
 
             $("safeNum").textContent =
-                Math.round(safety);
+                Math.round(
+                    Number(safety)
+                );
+
 
             $("safeFill").style.width =
                 Math.max(
@@ -1228,14 +1539,21 @@
                     )
                 ) + "%";
 
+
             $("safeFill").style.background =
                 scoreColor(
                     Number(safety)
                 );
         }
 
+
+        // --------------------------------------------------------
+        // RISK
+        // --------------------------------------------------------
+
         const risk =
             s.risk_level;
+
 
         if (risk) {
 
@@ -1250,15 +1568,21 @@
             );
         }
 
-        // Distraction
+
+        // --------------------------------------------------------
+        // DISTRACTION
+        // --------------------------------------------------------
+
         if (
             s.distraction_active
         ) {
 
             const duration =
                 Number(
-                    s.distraction_duration || 0
+                    s.distraction_duration ||
+                    0
                 ).toFixed(1);
+
 
             pill(
                 $("stDistract"),
@@ -1281,9 +1605,14 @@
             );
         }
 
-        // Fatigue
+
+        // --------------------------------------------------------
+        // FATIGUE
+        // --------------------------------------------------------
+
         const trend =
             s.fatigue_trend;
+
 
         if (
             trend === "INCREASING"
@@ -1325,6 +1654,7 @@
         }
     }
 
+
     // ============================================================
     // MOBILE
     // ============================================================
@@ -1342,6 +1672,7 @@
                     : "OFF";
         }
 
+
         if (
             s.camera_processing &&
             $("camProc")
@@ -1351,18 +1682,20 @@
                 s.camera_processing;
         }
 
+
         const n =
             s.notifications;
+
 
         if (!n) {
             return;
         }
 
-        if (
-            !$("notifBadge")
-        ) {
+
+        if (!$("notifBadge")) {
             return;
         }
+
 
         if (!n.enabled) {
 
@@ -1391,6 +1724,7 @@
                 "badge badge-warnb";
         }
 
+
         if ($("notifProvider")) {
 
             $("notifProvider").textContent =
@@ -1398,20 +1732,24 @@
         }
     }
 
+
     // ============================================================
     // BREAK
     // ============================================================
 
     let breakDismissed = false;
 
+
     function updateBreak(s) {
 
         const banner =
             $("breakBanner");
 
+
         if (!banner) {
             return;
         }
+
 
         if (
             s.break_recommended &&
@@ -1425,6 +1763,7 @@
                     "Take a short break.";
             }
 
+
             banner.classList.remove(
                 "hidden"
             );
@@ -1437,12 +1776,15 @@
                 "hidden"
             );
 
-            breakDismissed = false;
+            breakDismissed =
+                false;
         }
     }
 
+
     const breakDismiss =
         $("breakDismiss");
+
 
     if (breakDismiss) {
 
@@ -1453,6 +1795,7 @@
                 const banner =
                     $("breakBanner");
 
+
                 if (banner) {
 
                     banner.classList.add(
@@ -1460,17 +1803,22 @@
                     );
                 }
 
-                breakDismissed = true;
+
+                breakDismissed =
+                    true;
             }
         );
     }
+
 
     // ============================================================
     // VOICE
     // ============================================================
 
     let lastVoiceKey = null;
+
     let lastVoiceAt = 0;
+
 
     const VOICE_COOLDOWN =
         (
@@ -1478,47 +1826,63 @@
             8
         ) * 1000;
 
+
     function maybeSpeak(s) {
 
         if (
             !voiceToggle ||
             !voiceToggle.checked
         ) {
+
             return;
         }
+
 
         if (
             !("speechSynthesis" in window)
         ) {
+
             return;
         }
+
 
         const key =
             s.voice_key;
 
+
         const text =
             s.voice_text;
+
 
         if (
             !key ||
             !text
         ) {
+
             return;
         }
 
+
         const now =
             Date.now();
+
 
         if (
             key === lastVoiceKey &&
             now - lastVoiceAt <
             VOICE_COOLDOWN
         ) {
+
             return;
         }
 
-        lastVoiceKey = key;
-        lastVoiceAt = now;
+
+        lastVoiceKey =
+            key;
+
+        lastVoiceAt =
+            now;
+
 
         try {
 
@@ -1527,11 +1891,19 @@
                     text
                 );
 
-            utterance.rate = 1.02;
-            utterance.pitch = 1;
-            utterance.volume = 1;
+
+            utterance.rate =
+                1.02;
+
+            utterance.pitch =
+                1;
+
+            utterance.volume =
+                1;
+
 
             window.speechSynthesis.cancel();
+
 
             window.speechSynthesis.speak(
                 utterance
@@ -1540,17 +1912,24 @@
         } catch (e) {}
     }
 
+
     // ============================================================
     // CHARTS
     // ============================================================
 
     let scoreHistory = [];
+
     let earHistory = [];
+
     let marHistory = [];
+
     let attentionHistory = [];
+
     let safetyHistory = [];
 
+
     const MAX_POINTS = 60;
+
 
     function pushHistory(
         array,
@@ -1558,10 +1937,17 @@
     ) {
 
         array.push({
-            x: new Date()
-                .toLocaleTimeString(),
-            y: Number(value || 0)
+
+            x:
+                new Date()
+                    .toLocaleTimeString(),
+
+            y:
+                Number(
+                    value || 0
+                )
         });
+
 
         if (
             array.length >
@@ -1572,6 +1958,7 @@
         }
     }
 
+
     function updateCharts(s) {
 
         pushHistory(
@@ -1579,27 +1966,35 @@
             s.score
         );
 
+
         pushHistory(
             earHistory,
             s.ear
         );
+
 
         pushHistory(
             marHistory,
             s.mar
         );
 
+
         pushHistory(
             attentionHistory,
             s.attention_score
         );
+
 
         pushHistory(
             safetyHistory,
             s.safety_score
         );
 
-        // Score chart
+
+        // --------------------------------------------------------
+        // SCORE
+        // --------------------------------------------------------
+
         if (
             window.scoreChart
         ) {
@@ -1609,17 +2004,26 @@
                     p => p.x
                 );
 
-            window.scoreChart.data.datasets[0].data =
+
+            window.scoreChart
+                .data
+                .datasets[0]
+                .data =
                 scoreHistory.map(
                     p => p.y
                 );
+
 
             window.scoreChart.update(
                 "none"
             );
         }
 
-        // EAR / MAR chart
+
+        // --------------------------------------------------------
+        // EAR / MAR
+        // --------------------------------------------------------
+
         if (
             window.earMarChart
         ) {
@@ -1628,6 +2032,7 @@
                 earHistory.map(
                     p => p.x
                 );
+
 
             if (
                 window.earMarChart
@@ -1644,6 +2049,7 @@
                         p => p.y
                     );
 
+
                 window.earMarChart
                     .data
                     .datasets[1]
@@ -1653,12 +2059,17 @@
                     );
             }
 
+
             window.earMarChart.update(
                 "none"
             );
         }
 
-        // Safety chart
+
+        // --------------------------------------------------------
+        // SAFETY
+        // --------------------------------------------------------
+
         if (
             window.safetyChart
         ) {
@@ -1667,6 +2078,7 @@
                 attentionHistory.map(
                     p => p.x
                 );
+
 
             if (
                 window.safetyChart
@@ -1683,6 +2095,7 @@
                         p => p.y
                     );
 
+
                 window.safetyChart
                     .data
                     .datasets[1]
@@ -1692,11 +2105,13 @@
                     );
             }
 
+
             window.safetyChart.update(
                 "none"
             );
         }
     }
+
 
     // ============================================================
     // SESSION SUMMARY
@@ -1705,11 +2120,13 @@
     const summaryModal =
         $("summaryModal");
 
+
     async function showSessionSummary() {
 
         if (!summaryModal) {
             return;
         }
+
 
         try {
 
@@ -1718,24 +2135,31 @@
                     "/api/session/summary"
                 );
 
+
             const sum =
                 await response.json();
+
 
             if (
                 !sum ||
                 !sum.duration_seconds
             ) {
+
                 return;
             }
 
+
             const body =
                 $("summaryBody");
+
 
             if (!body) {
                 return;
             }
 
+
             body.innerHTML = "";
+
 
             const rows = [
 
@@ -1790,6 +2214,7 @@
                 ]
             ];
 
+
             rows.forEach(
                 ([key, label]) => {
 
@@ -1797,23 +2222,28 @@
                         sum[key] ??
                         "–";
 
+
                     const cell =
                         document.createElement(
                             "div"
                         );
 
+
                     cell.className =
                         "summary-cell";
+
 
                     cell.innerHTML =
                         `
                         <div class="sc-num">
                             ${value}
                         </div>
+
                         <div class="sc-lbl">
                             ${label}
                         </div>
                         `;
+
 
                     body.appendChild(
                         cell
@@ -1821,9 +2251,11 @@
                 }
             );
 
+
             summaryModal.classList.remove(
                 "hidden"
             );
+
 
         } catch (e) {
 
@@ -1834,8 +2266,10 @@
         }
     }
 
+
     const summaryClose =
         $("summaryClose");
+
 
     if (summaryClose) {
 
@@ -1850,8 +2284,10 @@
         );
     }
 
+
     const exportCsvBtn =
         $("exportCsvBtn");
+
 
     if (exportCsvBtn) {
 
@@ -1865,8 +2301,10 @@
         );
     }
 
+
     const exportJsonBtn =
         $("exportJsonBtn");
+
 
     if (exportJsonBtn) {
 
@@ -1879,6 +2317,7 @@
             }
         );
     }
+
 
     // ============================================================
     // RESET UI
@@ -1904,11 +2343,13 @@
             }
         );
 
+
         pill(
             $("riskPill"),
             "RISK –",
             "idle"
         );
+
 
         pill(
             $("stDistract"),
@@ -1916,31 +2357,41 @@
             "idle"
         );
 
+
         pill(
             $("stFatigue"),
             "–",
             "idle"
         );
 
+
         if ($("attNum")) {
+
             $("attNum").textContent =
                 "–";
         }
 
+
         if ($("safeNum")) {
+
             $("safeNum").textContent =
                 "–";
         }
 
+
         if ($("attFill")) {
+
             $("attFill").style.width =
                 "0%";
         }
 
+
         if ($("safeFill")) {
+
             $("safeFill").style.width =
                 "0%";
         }
+
 
         if ($("breakBanner")) {
 
@@ -1949,15 +2400,26 @@
                 .add("hidden");
         }
 
-        breakDismissed = false;
-        lastVoiceKey = null;
+
+        breakDismissed =
+            false;
+
+
+        lastVoiceKey =
+            null;
+
 
         scoreHistory = [];
+
         earHistory = [];
+
         marHistory = [];
+
         attentionHistory = [];
+
         safetyHistory = [];
     }
+
 
     // ============================================================
     // INITIAL STATE
@@ -1972,14 +2434,20 @@
                     "/api/state"
                 );
 
+
             if (!response.ok) {
                 return;
             }
 
+
             const state =
                 await response.json();
 
-            updateMobile(state);
+
+            updateMobile(
+                state
+            );
+
 
         } catch (e) {
 
@@ -1990,6 +2458,8 @@
         }
     }
 
+
     loadInitialState();
+
 
 })();
