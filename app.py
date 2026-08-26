@@ -47,6 +47,7 @@ app.config["MAX_CONTENT_LENGTH"] = (
     config.MAX_CONTENT_MB * 1024 * 1024
 )
 
+
 os.makedirs(
     config.UPLOAD_FOLDER,
     exist_ok=True
@@ -64,18 +65,33 @@ init_db()
 # DROWSINESS PIPELINE
 # ======================================================================
 
+DrowsinessPipeline = None
+
 try:
 
     from detection import DrowsinessPipeline
 
+    print(
+        "[OK] DrowsinessPipeline import successful."
+    )
+
 except Exception as exc:
 
-    DrowsinessPipeline = None
+    print(
+        "[ERROR] DrowsinessPipeline import FAILED."
+    )
 
     print(
-        "[WARNING] Could not import DrowsinessPipeline:",
-        exc
+        "[ERROR] Exception type:",
+        type(exc).__name__
     )
+
+    print(
+        "[ERROR] Exception:",
+        repr(exc)
+    )
+
+    DrowsinessPipeline = None
 
 
 pipeline = None
@@ -101,7 +117,7 @@ latest_jpeg = None
 
 
 # ======================================================================
-# ANALYTICS / NOTIFICATIONS
+# ANALYTICS
 # ======================================================================
 
 event_logger = EventLogger(config)
@@ -119,59 +135,125 @@ _last_logged_ts = 0.0
 
 
 # ======================================================================
-# PIPELINE
+# PIPELINE CREATION
 # ======================================================================
 
 def create_pipeline():
 
     global pipeline
 
+    # --------------------------------------------------------------
+    # Import failed
+    # --------------------------------------------------------------
+
     if DrowsinessPipeline is None:
 
         print(
-            "[ERROR] DrowsinessPipeline is unavailable."
+            "[ERROR] Cannot create pipeline."
+        )
+
+        print(
+            "[ERROR] DrowsinessPipeline is not available."
         )
 
         return False
 
+
+    # --------------------------------------------------------------
+    # Prevent multiple pipeline creation
+    # --------------------------------------------------------------
+
     with pipeline_lock:
 
-        if pipeline is None:
+        if pipeline is not None:
+
+            return True
+
+
+        try:
+
+            print(
+                "[INFO] Creating DrowsinessPipeline..."
+            )
+
+            print(
+                "[INFO] Python:",
+                os.sys.version
+            )
+
+
+            pipeline = DrowsinessPipeline(
+                config
+            )
+
+
+            if hasattr(
+                pipeline,
+                "reset"
+            ):
+
+                pipeline.reset()
+
+
+            print(
+                "[OK] DrowsinessPipeline initialized."
+            )
+
 
             try:
 
                 print(
-                    "[INFO] Loading DrowsinessPipeline..."
+                    "[INFO] CNN active:",
+                    bool(
+                        getattr(
+                            pipeline,
+                            "cnn_active",
+                            False
+                        )
+                    )
                 )
 
-                pipeline = DrowsinessPipeline(
-                    config
-                )
+            except Exception:
 
-                if hasattr(
-                    pipeline,
-                    "reset"
-                ):
+                pass
 
-                    pipeline.reset()
 
-                print(
-                    "[OK] Drowsiness pipeline initialized."
-                )
+            return True
 
-            except Exception as exc:
 
-                print(
-                    "[ERROR] Pipeline initialization failed:",
-                    repr(exc)
-                )
+        except Exception as exc:
 
-                pipeline = None
+            print(
+                "=" * 70
+            )
 
-                return False
+            print(
+                "[ERROR] DROWSINESS PIPELINE INITIALIZATION FAILED"
+            )
 
-    return True
+            print(
+                "[ERROR] Exception type:",
+                type(exc).__name__
+            )
 
+            print(
+                "[ERROR] Exception:",
+                repr(exc)
+            )
+
+            print(
+                "=" * 70
+            )
+
+
+            pipeline = None
+
+            return False
+
+
+# ======================================================================
+# PIPELINE RESET
+# ======================================================================
 
 def reset_pipeline():
 
@@ -179,45 +261,53 @@ def reset_pipeline():
 
     if pipeline is None:
 
-        create_pipeline()
+        if not create_pipeline():
 
-    if (
-        pipeline is not None
-        and hasattr(
+            return False
+
+
+    if pipeline is not None:
+
+        if hasattr(
             pipeline,
             "reset"
-        )
-    ):
+        ):
 
-        try:
+            try:
 
-            pipeline.reset()
+                pipeline.reset()
 
-        except Exception as exc:
+                print(
+                    "[OK] Pipeline reset."
+                )
 
-            print(
-                "[WARNING] Pipeline reset failed:",
-                repr(exc)
-            )
+            except Exception as exc:
+
+                print(
+                    "[WARNING] Pipeline reset failed:",
+                    repr(exc)
+                )
+
+
+    return True
 
 
 # ======================================================================
-# EVENT HOUSEKEEPING
+# EVENT PROCESSING
 # ======================================================================
 
 def process_events(state):
 
     global _last_logged_ts
 
+
     if not state:
 
         return
 
+
     now = time.time()
 
-    # --------------------------------------------------------------
-    # Notifications
-    # --------------------------------------------------------------
 
     try:
 
@@ -232,9 +322,6 @@ def process_events(state):
             repr(exc)
         )
 
-    # --------------------------------------------------------------
-    # Prediction
-    # --------------------------------------------------------------
 
     try:
 
@@ -249,9 +336,6 @@ def process_events(state):
             repr(exc)
         )
 
-    # --------------------------------------------------------------
-    # Timeline
-    # --------------------------------------------------------------
 
     try:
 
@@ -266,9 +350,6 @@ def process_events(state):
             repr(exc)
         )
 
-    # --------------------------------------------------------------
-    # Emergency
-    # --------------------------------------------------------------
 
     try:
 
@@ -283,9 +364,6 @@ def process_events(state):
             repr(exc)
         )
 
-    # --------------------------------------------------------------
-    # Prevent excessive DB logging
-    # --------------------------------------------------------------
 
     if (
         now - _last_logged_ts
@@ -294,16 +372,20 @@ def process_events(state):
 
         return
 
+
     _last_logged_ts = now
+
 
     events = (
         state.get("events")
         or []
     )
 
+
     if not events:
 
         return
+
 
     extra = {
 
@@ -328,6 +410,7 @@ def process_events(state):
             ),
 
     }
+
 
     for ev in events:
 
@@ -373,6 +456,7 @@ def process_events(state):
                 repr(exc)
             )
 
+
     try:
 
         event_logger.log_many(
@@ -389,7 +473,7 @@ def process_events(state):
 
 
 # ======================================================================
-# PAGES
+# HOME
 # ======================================================================
 
 @app.route("/")
@@ -397,17 +481,23 @@ def index():
 
     cnn_active = False
 
+
     if pipeline is not None:
 
         try:
 
             cnn_active = bool(
-                pipeline.cnn_active
+                getattr(
+                    pipeline,
+                    "cnn_active",
+                    False
+                )
             )
 
         except Exception:
 
             cnn_active = False
+
 
     return render_template(
 
@@ -420,254 +510,34 @@ def index():
     )
 
 
+# ======================================================================
+# UPLOAD PAGE
+# ======================================================================
+
 @app.route("/upload")
 def upload_page():
 
     return render_template(
-
         "upload.html",
-
         config=config,
-
     )
 
+
+# ======================================================================
+# HISTORY PAGE
+# ======================================================================
 
 @app.route("/history")
 def history_page():
 
     return render_template(
-
         "history.html",
-
         config=config,
-
     )
 
 
 # ======================================================================
-# CAMERA START HELPER
-# ======================================================================
-
-def start_browser_camera():
-
-    global browser_camera_running
-    global latest_state
-    global latest_jpeg
-
-    # --------------------------------------------------------------
-    # Load AI pipeline
-    # --------------------------------------------------------------
-
-    if not create_pipeline():
-
-        return {
-
-            "ok": False,
-
-            "error":
-                "Drowsiness detection pipeline could not be loaded."
-
-        }
-
-    # --------------------------------------------------------------
-    # Reset AI state
-    # --------------------------------------------------------------
-
-    reset_pipeline()
-
-    try:
-
-        predictor.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Predictor reset:",
-            repr(exc)
-        )
-
-    try:
-
-        timeline.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Timeline reset:",
-            repr(exc)
-        )
-
-    try:
-
-        emergency.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Emergency reset:",
-            repr(exc)
-        )
-
-    # --------------------------------------------------------------
-    # Start browser session
-    # --------------------------------------------------------------
-
-    browser_camera_running = True
-
-    latest_jpeg = None
-
-    latest_state = {
-
-        "found": False,
-
-        "status_text":
-            "Camera ready",
-
-        "score": 0,
-
-        "level":
-            "ALERT",
-
-        "camera_processing":
-            "BROWSER",
-
-    }
-
-    print(
-        "[CAMERA] Browser camera session started."
-    )
-
-    return {
-
-        "ok": True,
-
-        "running": True,
-
-        "mode":
-            "browser_camera",
-
-    }
-
-
-# ======================================================================
-# CAMERA STOP HELPER
-# ======================================================================
-
-def stop_browser_camera():
-
-    global browser_camera_running
-    global latest_state
-    global latest_jpeg
-
-    browser_camera_running = False
-
-    latest_jpeg = None
-
-    latest_state = {
-
-        "found": False,
-
-        "status_text":
-            "Camera stopped",
-
-        "score": 0,
-
-        "level":
-            "ALERT",
-
-        "camera_processing":
-            "BROWSER",
-
-    }
-
-    print(
-        "[CAMERA] Browser camera session stopped."
-    )
-
-    return {
-
-        "ok": True,
-
-        "running": False,
-
-    }
-
-
-# ======================================================================
-# CAMERA RESET HELPER
-# ======================================================================
-
-def reset_browser_camera():
-
-    global latest_state
-    global latest_jpeg
-
-    reset_pipeline()
-
-    try:
-
-        predictor.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Predictor reset:",
-            repr(exc)
-        )
-
-    try:
-
-        timeline.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Timeline reset:",
-            repr(exc)
-        )
-
-    try:
-
-        emergency.reset()
-
-    except Exception as exc:
-
-        print(
-            "[WARNING] Emergency reset:",
-            repr(exc)
-        )
-
-    latest_jpeg = None
-
-    latest_state = {
-
-        "found": False,
-
-        "status_text":
-            "Idle",
-
-        "score": 0,
-
-        "level":
-            "ALERT",
-
-        "camera_processing":
-            "BROWSER",
-
-    }
-
-    return {
-
-        "ok": True,
-
-        "running":
-            browser_camera_running,
-
-    }
-
-
-# ======================================================================
-# NEW CAMERA API
+# CAMERA START / STOP / RESET
 # ======================================================================
 
 @app.route(
@@ -676,82 +546,233 @@ def reset_browser_camera():
 )
 def api_camera(action):
 
+    global browser_camera_running
+    global latest_state
+    global latest_jpeg
+
+
+    # ==============================================================
+    # START
+    # ==============================================================
+
     if action == "start":
 
-        try:
+        print(
+            "[CAMERA] Browser camera START requested."
+        )
 
-            return jsonify(
-                start_browser_camera()
-            )
 
-        except Exception as exc:
+        # ----------------------------------------------------------
+        # Load AI pipeline
+        # ----------------------------------------------------------
 
-            print(
-                "[CAMERA START ERROR]",
-                repr(exc)
-            )
+        if not create_pipeline():
 
             return jsonify({
 
                 "ok": False,
 
                 "error":
-                    "Camera session could not be started.",
+                    "Drowsiness detection pipeline could not be loaded.",
 
-                "detail":
-                    str(exc),
+                "details":
+                    "Check Render logs for the exact pipeline initialization error.",
 
             }), 500
 
+
+        # ----------------------------------------------------------
+        # Reset AI
+        # ----------------------------------------------------------
+
+        reset_pipeline()
+
+
+        try:
+
+            predictor.reset()
+
+        except Exception as exc:
+
+            print(
+                "[WARNING] Predictor reset:",
+                repr(exc)
+            )
+
+
+        try:
+
+            timeline.reset()
+
+        except Exception as exc:
+
+            print(
+                "[WARNING] Timeline reset:",
+                repr(exc)
+            )
+
+
+        try:
+
+            emergency.reset()
+
+        except Exception as exc:
+
+            print(
+                "[WARNING] Emergency reset:",
+                repr(exc)
+            )
+
+
+        browser_camera_running = True
+
+
+        latest_state = {
+
+            "found": False,
+
+            "status_text":
+                "Waiting for browser camera...",
+
+            "score": 0,
+
+            "level": "ALERT",
+
+            "camera_processing":
+                "BROWSER",
+
+        }
+
+
+        latest_jpeg = None
+
+
+        print(
+            "[CAMERA] Browser camera session started."
+        )
+
+
+        return jsonify({
+
+            "ok": True,
+
+            "running": True,
+
+            "mode":
+                "browser_camera",
+
+        })
+
+
+    # ==============================================================
+    # STOP
+    # ==============================================================
 
     if action == "stop":
 
-        try:
+        print(
+            "[CAMERA] Browser camera STOP requested."
+        )
 
-            return jsonify(
-                stop_browser_camera()
-            )
 
-        except Exception as exc:
+        browser_camera_running = False
 
-            print(
-                "[CAMERA STOP ERROR]",
-                repr(exc)
-            )
 
-            return jsonify({
+        latest_state = {
 
-                "ok": False,
+            "found": False,
 
-                "error":
-                    str(exc),
+            "status_text":
+                "Camera stopped",
 
-            }), 500
+            "score": 0,
 
+            "level": "ALERT",
+
+            "camera_processing":
+                "BROWSER",
+
+        }
+
+
+        latest_jpeg = None
+
+
+        return jsonify({
+
+            "ok": True,
+
+            "running": False,
+
+        })
+
+
+    # ==============================================================
+    # RESET
+    # ==============================================================
 
     if action == "reset":
 
+        print(
+            "[CAMERA] Browser camera RESET requested."
+        )
+
+
+        reset_pipeline()
+
+
         try:
 
-            return jsonify(
-                reset_browser_camera()
-            )
+            predictor.reset()
 
-        except Exception as exc:
+        except Exception:
+            pass
 
-            print(
-                "[CAMERA RESET ERROR]",
-                repr(exc)
-            )
 
-            return jsonify({
+        try:
 
-                "ok": False,
+            timeline.reset()
 
-                "error":
-                    str(exc),
+        except Exception:
+            pass
 
-            }), 500
+
+        try:
+
+            emergency.reset()
+
+        except Exception:
+            pass
+
+
+        latest_state = {
+
+            "found": False,
+
+            "status_text":
+                "Idle",
+
+            "score": 0,
+
+            "level": "ALERT",
+
+            "camera_processing":
+                "BROWSER",
+
+        }
+
+
+        latest_jpeg = None
+
+
+        return jsonify({
+
+            "ok": True,
+
+            "running":
+                browser_camera_running,
+
+        })
 
 
     return jsonify({
@@ -759,170 +780,9 @@ def api_camera(action):
         "ok": False,
 
         "error":
-            "Unknown camera action",
+            "Unknown camera action"
 
     }), 400
-
-
-# ======================================================================
-# OLD / LEGACY CAMERA ROUTES
-#
-# IMPORTANT:
-# Some versions of your dashboard JavaScript use:
-#
-#   /start_camera
-#   /stop_camera
-#   /reset
-#
-# Keep these routes so old frontend code also works.
-# ======================================================================
-
-@app.route(
-    "/start_camera",
-    methods=["GET", "POST"]
-)
-def legacy_start_camera():
-
-    try:
-
-        result = start_browser_camera()
-
-        if result.get("ok"):
-
-            return jsonify({
-
-                "status":
-                    "started",
-
-                "ok":
-                    True,
-
-                "running":
-                    True,
-
-                "mode":
-                    "browser_camera",
-
-            })
-
-        return jsonify({
-
-            "status":
-                "error",
-
-            "ok":
-                False,
-
-            "error":
-                result.get(
-                    "error",
-                    "Camera could not be started."
-                ),
-
-        }), 500
-
-    except Exception as exc:
-
-        print(
-            "[LEGACY START ERROR]",
-            repr(exc)
-        )
-
-        return jsonify({
-
-            "status":
-                "error",
-
-            "ok":
-                False,
-
-            "error":
-                "Camera session could not be started.",
-
-            "detail":
-                str(exc),
-
-        }), 500
-
-
-@app.route(
-    "/stop_camera",
-    methods=["GET", "POST"]
-)
-def legacy_stop_camera():
-
-    try:
-
-        result = stop_browser_camera()
-
-        return jsonify({
-
-            "status":
-                "stopped",
-
-            **result,
-
-        })
-
-    except Exception as exc:
-
-        print(
-            "[LEGACY STOP ERROR]",
-            repr(exc)
-        )
-
-        return jsonify({
-
-            "status":
-                "error",
-
-            "ok":
-                False,
-
-            "error":
-                str(exc),
-
-        }), 500
-
-
-@app.route(
-    "/reset",
-    methods=["GET", "POST"]
-)
-def legacy_reset():
-
-    try:
-
-        result = reset_browser_camera()
-
-        return jsonify({
-
-            "status":
-                "reset",
-
-            **result,
-
-        })
-
-    except Exception as exc:
-
-        print(
-            "[LEGACY RESET ERROR]",
-            repr(exc)
-        )
-
-        return jsonify({
-
-            "status":
-                "error",
-
-            "ok":
-                False,
-
-            "error":
-                str(exc),
-
-        }), 500
 
 
 # ======================================================================
@@ -933,10 +793,11 @@ def legacy_reset():
     "/api/process_frame",
     methods=["POST"]
 )
-def process_frame():
+def process_browser_frame():
 
     global latest_state
     global latest_jpeg
+
 
     # --------------------------------------------------------------
     # Camera session check
@@ -946,13 +807,13 @@ def process_frame():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 "Camera session is not active."
 
         }), 400
+
 
     # --------------------------------------------------------------
     # Pipeline check
@@ -964,122 +825,92 @@ def process_frame():
 
             return jsonify({
 
-                "ok":
-                    False,
+                "ok": False,
 
                 "error":
                     "Detection pipeline unavailable."
 
             }), 500
 
+
     # --------------------------------------------------------------
     # Receive browser frame
     # --------------------------------------------------------------
 
-    image_data = request.files.get(
+    image_file = request.files.get(
         "frame"
     )
 
-    if image_data is None:
+
+    if image_file is None:
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
-                "No frame received."
+                "No camera frame received."
 
         }), 400
+
 
     try:
 
         # ----------------------------------------------------------
-        # Read image
+        # Read JPEG
         # ----------------------------------------------------------
 
-        raw = image_data.read()
+        raw = image_file.read()
+
 
         if not raw:
 
             return jsonify({
 
-                "ok":
-                    False,
+                "ok": False,
 
                 "error":
-                    "Empty frame."
+                    "Empty camera frame."
 
             }), 400
 
-        # ----------------------------------------------------------
-        # Protect server from oversized frame
-        # ----------------------------------------------------------
-
-        max_frame_bytes = (
-            getattr(
-                config,
-                "MAX_CAMERA_FRAME_KB",
-                1024
-            )
-            * 1024
-        )
-
-        if len(raw) > max_frame_bytes:
-
-            return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    (
-                        "Camera frame too large. "
-                        f"Maximum "
-                        f"{getattr(config, 'MAX_CAMERA_FRAME_KB', 1024)} KB."
-                    ),
-
-            }), 413
 
         # ----------------------------------------------------------
-        # JPEG -> NumPy
+        # Decode JPEG
         # ----------------------------------------------------------
 
         arr = np.frombuffer(
-
             raw,
-
             dtype=np.uint8
-
         )
 
-        # ----------------------------------------------------------
-        # NumPy -> OpenCV
-        # ----------------------------------------------------------
 
         frame = cv2.imdecode(
-
             arr,
-
             cv2.IMREAD_COLOR
-
         )
+
 
         if frame is None:
 
             return jsonify({
 
-                "ok":
-                    False,
+                "ok": False,
 
                 "error":
-                    "Invalid image frame."
+                    "Invalid JPEG camera frame."
 
             }), 400
+
 
         # ----------------------------------------------------------
         # Resize
         # ----------------------------------------------------------
+
+        height, width = (
+            frame.shape[:2]
+        )
+
 
         target_width = int(
             getattr(
@@ -1089,6 +920,7 @@ def process_frame():
             )
         )
 
+
         target_height = int(
             getattr(
                 config,
@@ -1097,92 +929,92 @@ def process_frame():
             )
         )
 
-        frame = cv2.resize(
 
-            frame,
+        if width > target_width:
 
-            (
-                target_width,
-                target_height
-            ),
+            scale = (
+                target_width
+                / float(width)
+            )
 
-            interpolation=cv2.INTER_AREA,
 
-        )
+            frame = cv2.resize(
+
+                frame,
+
+                (
+                    target_width,
+
+                    int(
+                        height * scale
+                    )
+                ),
+
+                interpolation=
+                    cv2.INTER_AREA,
+
+            )
+
 
         # ----------------------------------------------------------
-        # Mirror browser frame
+        # Mirror browser camera
         # ----------------------------------------------------------
 
         frame = cv2.flip(
-
             frame,
-
             1
-
         )
 
+
         # ----------------------------------------------------------
-        # AI PROCESSING
+        # AI processing
         # ----------------------------------------------------------
 
         with pipeline_lock:
 
             annotated, state = (
                 pipeline.process_frame(
-
                     frame,
-
                     draw=True
-
                 )
             )
 
-        # ----------------------------------------------------------
-        # Fallback state
-        # ----------------------------------------------------------
 
         if state is None:
 
             state = {
 
-                "found":
-                    False,
+                "found": False,
 
                 "status_text":
                     "Processing",
 
-                "score":
-                    0,
+                "score": 0,
 
                 "level":
                     "ALERT",
 
             }
 
-        # ----------------------------------------------------------
-        # Add browser processing info
-        # ----------------------------------------------------------
-
-        state = dict(
-            state
-        )
-
-        state[
-            "camera_processing"
-        ] = "BROWSER"
 
         latest_state = dict(
             state
         )
 
+
+        latest_state[
+            "camera_processing"
+        ] = "BROWSER"
+
+
         # ----------------------------------------------------------
-        # Events / notifications / prediction
+        # Events
         # ----------------------------------------------------------
 
         process_events(
-            state
+            latest_state
         )
+
 
         # ----------------------------------------------------------
         # Encode processed frame
@@ -1196,6 +1028,7 @@ def process_frame():
             )
         )
 
+
         ok, buffer = cv2.imencode(
 
             ".jpg",
@@ -1203,79 +1036,87 @@ def process_frame():
             annotated,
 
             [
-
                 cv2.IMWRITE_JPEG_QUALITY,
-
                 jpeg_quality
-
             ],
 
         )
+
 
         if not ok:
 
             return jsonify({
 
-                "ok":
-                    False,
+                "ok": False,
 
                 "error":
                     "Could not encode processed frame."
 
             }), 500
 
+
         jpeg_bytes = (
             buffer.tobytes()
         )
 
-        latest_jpeg = (
-            jpeg_bytes
+
+        latest_jpeg = jpeg_bytes
+
+
+        encoded = (
+            base64.b64encode(
+                jpeg_bytes
+            )
+            .decode("ascii")
         )
 
-        # ----------------------------------------------------------
-        # Base64 response
-        # ----------------------------------------------------------
-
-        encoded = base64.b64encode(
-
-            jpeg_bytes
-
-        ).decode(
-            "ascii"
-        )
 
         # ----------------------------------------------------------
-        # Return to browser
+        # Return result
         # ----------------------------------------------------------
 
         return jsonify({
 
-            "ok":
-                True,
+            "ok": True,
 
             "image":
                 "data:image/jpeg;base64,"
                 + encoded,
 
-            "frame":
-                encoded,
-
             "state":
-                state,
+                latest_state,
 
         })
+
 
     except Exception as exc:
 
         print(
-            "[FRAME ERROR]",
+            "=" * 70
+        )
+
+        print(
+            "[ERROR] BROWSER FRAME PROCESSING FAILED"
+        )
+
+        print(
+            "[ERROR] Exception type:",
+            type(exc).__name__
+        )
+
+        print(
+            "[ERROR] Exception:",
             repr(exc)
         )
 
+        print(
+            "=" * 70
+        )
+
+
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 str(exc)
@@ -1291,95 +1132,68 @@ def process_frame():
 def api_state():
 
     state = dict(
-
         latest_state
-
-        or {
-
-            "found":
-                False,
-
-            "status_text":
-                "Idle",
-
-            "score":
-                0,
-
-        }
-
     )
 
-    state[
-        "privacy_mode"
-    ] = bool(
 
+    state["privacy_mode"] = bool(
         getattr(
             config,
             "PRIVACY_MODE",
             False
         )
-
     )
 
-    state[
-        "video_storage"
-    ] = bool(
 
+    state["video_storage"] = bool(
         getattr(
             config,
             "VIDEO_STORAGE_ENABLED",
             False
         )
-
     )
 
-    state[
-        "camera_processing"
-    ] = "BROWSER"
 
-    state[
-        "browser_camera"
-    ] = True
+    state["camera_processing"] = (
+        "BROWSER"
+    )
 
-    state[
-        "camera_running"
-    ] = browser_camera_running
+
+    state["browser_camera"] = True
+
 
     try:
 
-        state[
-            "notifications"
-        ] = notifier.status()
+        state["notifications"] = (
+            notifier.status()
+        )
 
     except Exception:
 
-        state[
-            "notifications"
-        ] = {}
+        state["notifications"] = {}
+
 
     try:
 
-        state[
-            "prediction"
-        ] = predictor.current()
+        state["prediction"] = (
+            predictor.current()
+        )
 
     except Exception:
 
-        state[
-            "prediction"
-        ] = {}
+        state["prediction"] = {}
+
 
     try:
 
-        state[
-            "emergency"
-        ] = emergency.status()
+        state["emergency"] = (
+            emergency.status()
+        )
 
     except Exception:
 
-        state[
-            "emergency"
-        ] = {}
+        state["emergency"] = {}
+
 
     return jsonify(
         state
@@ -1399,6 +1213,7 @@ def video_feed():
 
             frame = latest_jpeg
 
+
             if frame is not None:
 
                 yield (
@@ -1413,18 +1228,18 @@ def video_feed():
 
                 )
 
+
             time.sleep(
                 0.05
             )
+
 
     return Response(
 
         generate(),
 
-        mimetype=(
-            "multipart/x-mixed-replace;"
-            " boundary=frame"
-        )
+        mimetype=
+            "multipart/x-mixed-replace; boundary=frame"
 
     )
 
@@ -1461,29 +1276,30 @@ def api_analyze():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 "No file part"
 
         }), 400
 
+
     file = request.files[
         "file"
     ]
+
 
     if file.filename == "":
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 "No file selected"
 
         }), 400
+
 
     if not allowed_file(
         file.filename
@@ -1491,17 +1307,18 @@ def api_analyze():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 "Unsupported file type"
 
         }), 400
 
+
     filename = secure_filename(
         file.filename
     )
+
 
     save_path = os.path.join(
 
@@ -1511,9 +1328,11 @@ def api_analyze():
 
     )
 
+
     file.save(
         save_path
     )
+
 
     try:
 
@@ -1529,13 +1348,13 @@ def api_analyze():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 str(exc)
 
         }), 500
+
 
     if (
 
@@ -1564,21 +1383,20 @@ def api_analyze():
                 f"drowsy episodes in {filename}"
             ),
 
-            score=summary.get(
-                "max_score"
-            ),
+            score=
+                summary.get(
+                    "max_score"
+                ),
 
             source="upload",
 
         )
 
-    summary[
-        "ok"
-    ] = True
 
-    summary[
-        "filename"
-    ] = filename
+    summary["ok"] = True
+
+    summary["filename"] = filename
+
 
     return jsonify(
         summary
@@ -1593,29 +1411,24 @@ def api_analyze():
 def api_events():
 
     limit = request.args.get(
-
         "limit",
-
         100,
-
         type=int
-
     )
+
 
     source = request.args.get(
         "source",
         None
     )
 
+
     return jsonify({
 
         "events":
             get_events(
-
                 limit=limit,
-
                 source=source
-
             )
 
     })
@@ -1637,10 +1450,10 @@ def api_clear():
 
     removed = clear_events()
 
+
     return jsonify({
 
-        "ok":
-            True,
+        "ok": True,
 
         "removed":
             removed,
@@ -1652,20 +1465,17 @@ def api_clear():
 # SESSION SUMMARY
 # ======================================================================
 
-@app.route(
-    "/api/session/summary"
-)
+@app.route("/api/session/summary")
 def api_session_summary():
 
     summary = {}
+
 
     if (
 
         pipeline is not None
 
-        and
-
-        hasattr(
+        and hasattr(
             pipeline,
             "session_summary"
         )
@@ -1675,45 +1485,39 @@ def api_session_summary():
         try:
 
             summary = (
-
                 pipeline.session_summary()
-
                 or {}
-
             )
 
         except Exception as exc:
 
             print(
-                "[SESSION SUMMARY]",
+                "[SUMMARY]",
                 repr(exc)
             )
 
-            summary = {}
 
     try:
 
-        summary[
-            "timeline"
-        ] = timeline.series()
+        summary["timeline"] = (
+            timeline.series()
+        )
 
     except Exception:
 
-        summary[
-            "timeline"
-        ] = {}
+        summary["timeline"] = {}
+
 
     try:
 
-        summary[
-            "final_prediction"
-        ] = predictor.current()
+        summary["final_prediction"] = (
+            predictor.current()
+        )
 
     except Exception:
 
-        summary[
-            "final_prediction"
-        ] = {}
+        summary["final_prediction"] = {}
+
 
     return jsonify(
         summary
@@ -1744,9 +1548,7 @@ def api_timeline():
 # NOTIFICATIONS
 # ======================================================================
 
-@app.route(
-    "/api/notify/status"
-)
+@app.route("/api/notify/status")
 def api_notify_status():
 
     return jsonify(
@@ -1770,8 +1572,7 @@ def api_notify_test():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "detail":
                 str(exc)
@@ -1783,9 +1584,7 @@ def api_notify_test():
 # EMERGENCY
 # ======================================================================
 
-@app.route(
-    "/api/emergency/status"
-)
+@app.route("/api/emergency/status")
 def api_emergency_status():
 
     return jsonify(
@@ -1809,8 +1608,7 @@ def api_emergency_test():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "detail":
                 str(exc)
@@ -1822,21 +1620,17 @@ def api_emergency_test():
 # EXPORT
 # ======================================================================
 
-@app.route(
-    "/api/events/export"
-)
+@app.route("/api/events/export")
 def api_events_export():
 
     fmt = (
-
         request.args.get(
             "fmt",
             "json"
         )
-
         or "json"
-
     ).lower()
+
 
     if fmt not in (
         "json",
@@ -1845,13 +1639,13 @@ def api_events_export():
 
         return jsonify({
 
-            "ok":
-                False,
+            "ok": False,
 
             "error":
                 "fmt must be json or csv"
 
         }), 400
+
 
     mimetype, text = (
         event_logger.export(
@@ -1859,19 +1653,18 @@ def api_events_export():
         )
     )
 
+
     extension = (
-
         "csv"
-
         if fmt == "csv"
-
         else "json"
-
     )
+
 
     filename = (
         f"driver_events.{extension}"
     )
+
 
     return Response(
 
@@ -1882,10 +1675,7 @@ def api_events_export():
         headers={
 
             "Content-Disposition":
-                (
-                    "attachment; "
-                    f"filename={filename}"
-                )
+                f"attachment; filename={filename}"
 
         },
 
@@ -1899,28 +1689,9 @@ def api_events_export():
 @app.route("/api/health")
 def api_health():
 
-    cnn_active = False
-
-    if pipeline is not None:
-
-        try:
-
-            cnn_active = bool(
-                getattr(
-                    pipeline,
-                    "cnn_active",
-                    False
-                )
-            )
-
-        except Exception:
-
-            cnn_active = False
-
     return jsonify({
 
-        "ok":
-            True,
+        "ok": True,
 
         "camera_running":
             browser_camera_running,
@@ -1928,11 +1699,24 @@ def api_health():
         "camera_mode":
             "browser",
 
-        "camera_processing":
-            "BROWSER",
+        "pipeline_loaded":
+            pipeline is not None,
 
-        "cnn_active":
-            cnn_active,
+        "cnn_active": (
+
+            bool(
+                getattr(
+                    pipeline,
+                    "cnn_active",
+                    False
+                )
+            )
+
+            if pipeline is not None
+
+            else False
+
+        ),
 
         "time":
             time.time(),
@@ -1941,7 +1725,7 @@ def api_health():
 
 
 # ======================================================================
-# ERROR HANDLERS
+# ERROR 413
 # ======================================================================
 
 @app.errorhandler(413)
@@ -1949,14 +1733,11 @@ def too_large(_):
 
     return jsonify({
 
-        "ok":
-            False,
+        "ok": False,
 
         "error":
-            (
-                f"File exceeds "
-                f"{config.MAX_CONTENT_MB} MB limit"
-            )
+            f"File exceeds "
+            f"{config.MAX_CONTENT_MB} MB limit"
 
     }), 413
 
@@ -1967,30 +1748,25 @@ def too_large(_):
 
 if __name__ == "__main__":
 
-    print("=" * 60)
+    print("=" * 70)
 
     print(
         " Driver Drowsiness Detection Dashboard"
     )
 
-    print("=" * 60)
+    print("=" * 70)
 
     print(
-
         f" Local URL: "
         f"http://127.0.0.1:{config.PORT}"
-
     )
 
     print(
         " Camera mode: BROWSER CAMERA"
     )
 
-    print(
-        " Server webcam access: DISABLED"
-    )
+    print("=" * 70)
 
-    print("=" * 60)
 
     app.run(
 
