@@ -11,7 +11,8 @@ alerts      : SideLook + FaceCoverage detectors and the central AlertManager.
 
 from .landmarks import LandmarkDetector          # noqa: F401
 from .drowsiness import DrowsinessPipeline, DrowsinessScorer  # noqa: F401
-from .sunglasses import SunglassesDetector       # noqa: F401
+from .sunglasses import SunglassesDetector  
+from .drowsiness import DrowsinessPipeline, DrowsinessScorer     # noqa: F401
 from .alerts import (                            # noqa: F401
     AlertManager, SideLookDetector, FaceCoverageDetector,
 )

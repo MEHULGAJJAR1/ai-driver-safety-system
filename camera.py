@@ -15,7 +15,7 @@ PRODUCTION:
 import time
 import threading
 import base64
-
+from detection import DrowsinessPipeline
 import cv2
 import numpy as np
 
