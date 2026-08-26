@@ -4,19 +4,10 @@
 # ============================================================
 
 Flask>=3.0,<4.0
-
-# Computer vision
 opencv-python>=4.8,<5.0
 mediapipe>=0.10.9
 numpy==1.26.4
 Pillow>=10.0
 scipy>=1.10,<2.0
-
-# CNN / Deep Learning
-tensorflow==2.16.2
-
-# Production server
+tensorflow>=2.13,<2.17
 gunicorn>=23.0,<24.0
-
-# Optional Firebase notifications
-# firebase-admin>=6.5,<7.0
