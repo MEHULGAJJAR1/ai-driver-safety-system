@@ -1,79 +1,72 @@
 (function () {
-
     "use strict";
-
 
     // ============================================================
     // HELPERS
     // ============================================================
 
-    const $ = (id) =>
-        document.getElementById(id);
+    const $ = (id) => document.getElementById(id);
 
+    const feed = $("videoFeed");
+    const placeholder = $("videoPlaceholder");
 
-    const cameraVideo =
-        $("cameraVideo");
+    const startBtn = $("startBtn");
+    const stopBtn = $("stopBtn");
+    const resetBtn = $("resetBtn");
 
-    const feed =
-        $("videoFeed");
+    const alarmToggle = $("alarmToggle");
+    const voiceToggle = $("voiceToggle");
 
-    const placeholder =
-        $("videoPlaceholder");
+    const alarmFlash = $("alarmFlash");
+    const statusCard = $("statusCard");
 
-    const startBtn =
-        $("startBtn");
+    // ============================================================
+    // BROWSER CAMERA VIDEO
+    // ============================================================
+    // dashboard.html mein cameraVideo nahi tha.
+    // Isliye hidden video element automatically create kar rahe hain.
 
-    const stopBtn =
-        $("stopBtn");
+    let cameraVideo = $("cameraVideo");
 
-    const resetBtn =
-        $("resetBtn");
+    if (!cameraVideo) {
+        cameraVideo = document.createElement("video");
 
-    const alarmToggle =
-        $("alarmToggle");
+        cameraVideo.id = "cameraVideo";
 
-    const voiceToggle =
-        $("voiceToggle");
+        cameraVideo.autoplay = true;
+        cameraVideo.playsInline = true;
+        cameraVideo.muted = true;
 
-    const alarmFlash =
-        $("alarmFlash");
+        cameraVideo.style.display = "none";
+        cameraVideo.style.position = "absolute";
+        cameraVideo.style.width = "1px";
+        cameraVideo.style.height = "1px";
+        cameraVideo.style.opacity = "0";
+        cameraVideo.style.pointerEvents = "none";
 
-    const statusCard =
-        $("statusCard");
-
+        document.body.appendChild(cameraVideo);
+    }
 
     let cameraStream = null;
-
     let running = false;
-
     let processing = false;
-
-    let polling = null;
+    let processingTimer = null;
 
     let lastFrameTime = 0;
 
+    // Render Free ke liye 5-6 FPS enough hai
     const FRAME_INTERVAL = 180;
-
 
     // ============================================================
     // AUDIO
     // ============================================================
 
-    const sndDrowsiness =
-        $("sndDrowsiness");
-
-    const sndSideLook =
-        $("sndSideLook");
-
-    const sndFaceCovered =
-        $("sndFaceCovered");
-
-    const sndCritical =
-        $("sndCritical");
-
+    const sndDrowsiness = $("sndDrowsiness");
+    const sndSideLook = $("sndSideLook");
+    const sndFaceCovered = $("sndFaceCovered");
+    const sndCritical = $("sndCritical");
 
     let currentSound = null;
-
 
     function stopAllAudio() {
 
@@ -87,19 +80,21 @@
             if (!audio) return;
 
             try {
-
                 audio.pause();
-
                 audio.currentTime = 0;
-
             } catch (e) {}
-
         });
 
         currentSound = null;
 
+        if (alarmFlash) {
+            alarmFlash.classList.remove(
+                "on",
+                "warn",
+                "crit"
+            );
+        }
     }
-
 
     function unlockAudio() {
 
@@ -116,24 +111,23 @@
 
                 audio.muted = true;
 
-                const p =
-                    audio.play();
+                const promise = audio.play();
 
-                if (p) {
+                if (promise && promise.then) {
 
-                    p.then(() => {
+                    promise
+                        .then(() => {
 
-                        audio.pause();
+                            audio.pause();
+                            audio.currentTime = 0;
+                            audio.muted = false;
 
-                        audio.currentTime = 0;
+                        })
+                        .catch(() => {
 
-                        audio.muted = false;
+                            audio.muted = false;
 
-                    }).catch(() => {
-
-                        audio.muted = false;
-
-                    });
+                        });
 
                 }
 
@@ -142,125 +136,102 @@
                 audio.muted = false;
 
             }
-
         });
-
     }
-
 
     function playAlertSound(state) {
 
-        if (!alarmToggle.checked) {
-
+        if (!alarmToggle || !alarmToggle.checked) {
             stopAllAudio();
-
             return;
-
         }
 
-
-        if (!state.alert_active) {
-
+        if (!state || !state.alert_active) {
             stopAllAudio();
-
             return;
-
         }
-
 
         let desired = null;
 
+        const type = String(
+            state.alert_type || ""
+        ).toUpperCase();
 
-        const type =
-            state.alert_type || "";
+        if (type.includes("CRITICAL")) {
 
+            desired = sndCritical;
 
-        if (
-            type.includes("CRITICAL")
+        } else if (type.includes("SIDE_LOOK")) {
+
+            desired = sndSideLook;
+
+        } else if (
+            type.includes("FACE") ||
+            type.includes("COVERED")
         ) {
 
-            desired =
-                sndCritical;
+            desired = sndFaceCovered;
 
+        } else {
+
+            desired = sndDrowsiness;
         }
 
-        else if (
-            type.includes("SIDE_LOOK")
-        ) {
-
-            desired =
-                sndSideLook;
-
+        if (!desired) {
+            stopAllAudio();
+            return;
         }
-
-        else if (
-            type.includes("FACE")
-        ) {
-
-            desired =
-                sndFaceCovered;
-
-        }
-
-        else {
-
-            desired =
-                sndDrowsiness;
-
-        }
-
 
         if (desired === currentSound) {
-
             return;
-
         }
-
 
         stopAllAudio();
 
+        try {
 
-        if (desired) {
+            desired.loop = true;
+            desired.currentTime = 0;
 
-            try {
+            const promise = desired.play();
 
-                desired.loop = true;
+            if (promise && promise.catch) {
+                promise.catch(() => {});
+            }
 
-                desired.currentTime = 0;
+            currentSound = desired;
 
-                desired.play()
-                    .catch(() => {});
-
-                currentSound =
-                    desired;
-
-            } catch (e) {}
-
-        }
-
+        } catch (e) {}
 
         if (alarmFlash) {
 
             alarmFlash.classList.add("on");
 
-        }
+            alarmFlash.classList.toggle(
+                "warn",
+                type.includes("SIDE_LOOK")
+            );
 
+            alarmFlash.classList.toggle(
+                "crit",
+                type.includes("CRITICAL")
+            );
+        }
     }
 
+    if (alarmToggle) {
 
-    alarmToggle.addEventListener(
-        "change",
-        function () {
+        alarmToggle.addEventListener(
+            "change",
+            function () {
 
-            if (!alarmToggle.checked) {
-
-                stopAllAudio();
+                if (!alarmToggle.checked) {
+                    stopAllAudio();
+                }
 
             }
-
-        }
-    );
-
+        );
+    }
 
     // ============================================================
     // BROWSER CAMERA
@@ -274,354 +245,386 @@
         ) {
 
             throw new Error(
-                "Your browser does not support camera access."
+                "Camera access is not supported by this browser."
             );
-
         }
 
+        // HTTPS required.
+        if (
+            location.protocol !== "https:" &&
+            location.hostname !== "localhost" &&
+            location.hostname !== "127.0.0.1"
+        ) {
+
+            throw new Error(
+                "Camera requires HTTPS. Open the Render HTTPS URL."
+            );
+        }
 
         const stream =
             await navigator.mediaDevices.getUserMedia({
 
                 video: {
-
                     facingMode: "user",
 
                     width: {
-                        ideal: 640
+                        ideal: 640,
+                        max: 1280
                     },
 
                     height: {
-                        ideal: 480
-                    }
+                        ideal: 480,
+                        max: 720
+                    },
 
+                    frameRate: {
+                        ideal: 15,
+                        max: 24
+                    }
                 },
 
                 audio: false
-
             });
 
+        cameraStream = stream;
 
-        cameraStream =
-            stream;
+        cameraVideo.srcObject = stream;
 
-
-        cameraVideo.srcObject =
-            stream;
-
+        cameraVideo.muted = true;
+        cameraVideo.playsInline = true;
+        cameraVideo.autoplay = true;
 
         await cameraVideo.play();
-
     }
-
 
     function closeBrowserCamera() {
 
-        if (!cameraStream) {
+        if (cameraStream) {
 
-            return;
+            cameraStream
+                .getTracks()
+                .forEach((track) => {
 
+                    try {
+                        track.stop();
+                    } catch (e) {}
+
+                });
+
+            cameraStream = null;
         }
 
-
-        cameraStream
-            .getTracks()
-            .forEach(
-                track => track.stop()
-            );
-
-
-        cameraStream = null;
-
-        cameraVideo.srcObject =
-            null;
-
-    }
-
-
-    // ============================================================
-    // START
-    // ============================================================
-
-    startBtn.addEventListener(
-        "click",
-        async function () {
-
-            startBtn.disabled =
-                true;
-
+        if (cameraVideo) {
 
             try {
+                cameraVideo.pause();
+            } catch (e) {}
 
-                unlockAudio();
+            cameraVideo.srcObject = null;
+        }
+    }
 
+    // ============================================================
+    // START CAMERA
+    // ============================================================
 
-                // FIRST browser permission
-                await openBrowserCamera();
+    if (startBtn) {
 
+        startBtn.addEventListener(
+            "click",
+            async function () {
 
-                // THEN tell Flask that browser camera session started
-                const response =
-                    await fetch(
-                        "/api/camera/start",
-                        {
-                            method: "POST"
-                        }
-                    );
-
-
-                const result =
-                    await response.json();
-
-
-                if (!result.ok) {
-
-                    throw new Error(
-                        result.error ||
-                        "Could not start detection."
-                    );
-
+                if (running) {
+                    return;
                 }
 
+                startBtn.disabled = true;
 
-                running = true;
+                try {
 
+                    // Browser user gesture -> unlock alarm audio
+                    unlockAudio();
 
-                cameraVideo.style.display =
-                    "block";
+                    // IMPORTANT:
+                    // Camera is opened on USER'S laptop/mobile.
+                    // Render server camera is NOT used.
+                    await openBrowserCamera();
 
+                    // Tell Flask to start browser mode.
+                    const response =
+                        await fetch(
+                            "/api/camera/start",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Accept": "application/json"
+                                }
+                            }
+                        );
 
-                feed.style.display =
-                    "none";
+                    if (!response.ok) {
 
+                        throw new Error(
+                            "Server camera session could not be started."
+                        );
+                    }
 
-                placeholder.style.display =
-                    "none";
+                    const result =
+                        await response.json();
 
+                    if (!result.ok) {
 
-                stopBtn.disabled =
-                    false;
+                        throw new Error(
+                            result.error ||
+                            "Drowsiness detection pipeline could not be loaded."
+                        );
+                    }
 
+                    running = true;
+                    lastFrameTime = 0;
 
-                startBtn.disabled =
-                    true;
+                    // Actual browser camera stays hidden.
+                    cameraVideo.style.display = "none";
 
+                    // Processed frame appears here.
+                    if (feed) {
+                        feed.style.display = "block";
+                    }
 
-                startProcessing();
+                    if (placeholder) {
+                        placeholder.style.display = "none";
+                    }
 
+                    if (stopBtn) {
+                        stopBtn.disabled = false;
+                    }
 
+                    startBtn.disabled = true;
+
+                    startProcessing();
+
+                } catch (error) {
+
+                    console.error(
+                        "Camera start error:",
+                        error
+                    );
+
+                    running = false;
+
+                    stopProcessing();
+                    closeBrowserCamera();
+                    stopAllAudio();
+
+                    if (placeholder) {
+                        placeholder.style.display = "block";
+
+                        const p =
+                            placeholder.querySelector("p");
+
+                        if (p) {
+                            p.textContent = "Camera stopped";
+                        }
+                    }
+
+                    if (feed) {
+                        feed.style.display = "none";
+                        feed.removeAttribute("src");
+                    }
+
+                    if (stopBtn) {
+                        stopBtn.disabled = true;
+                    }
+
+                    startBtn.disabled = false;
+
+                    alert(
+                        "Could not open the camera.\n\n" +
+                        error.message +
+                        "\n\n" +
+                        "Please allow camera permission in Chrome."
+                    );
+                }
             }
+        );
+    }
 
-            catch (error) {
+    // ============================================================
+    // STOP CAMERA
+    // ============================================================
+
+    if (stopBtn) {
+
+        stopBtn.addEventListener(
+            "click",
+            async function () {
+
+                running = false;
+
+                stopProcessing();
 
                 closeBrowserCamera();
 
+                stopAllAudio();
 
-                alert(
-                    "Could not open the camera.\n\n" +
-                    error.message +
-                    "\n\n" +
-                    "Please allow camera permission in your browser."
-                );
+                try {
 
+                    await fetch(
+                        "/api/camera/stop",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        }
+                    );
 
-                startBtn.disabled =
-                    false;
+                } catch (e) {}
 
-            }
+                if (feed) {
 
-        }
-    );
+                    feed.style.display = "none";
+                    feed.removeAttribute("src");
+                }
 
+                if (placeholder) {
 
-    // ============================================================
-    // STOP
-    // ============================================================
+                    placeholder.style.display = "block";
 
-    stopBtn.addEventListener(
-        "click",
-        async function () {
+                    const p =
+                        placeholder.querySelector("p");
 
-            running = false;
-
-
-            stopProcessing();
-
-
-            closeBrowserCamera();
-
-
-            try {
-
-                await fetch(
-                    "/api/camera/stop",
-                    {
-                        method: "POST"
+                    if (p) {
+                        p.textContent = "Camera stopped";
                     }
-                );
+                }
 
-            } catch (e) {}
+                if (stopBtn) {
+                    stopBtn.disabled = true;
+                }
 
+                if (startBtn) {
+                    startBtn.disabled = false;
+                }
 
-            cameraVideo.style.display =
-                "none";
+                try {
 
+                    if (
+                        window.speechSynthesis
+                    ) {
 
-            feed.style.display =
-                "none";
+                        window.speechSynthesis.cancel();
+                    }
 
+                } catch (e) {}
 
-            placeholder.style.display =
-                "block";
+                await showSessionSummary();
 
-
-            placeholder.querySelector(
-                "p"
-            ).textContent =
-                "Camera stopped";
-
-
-            stopBtn.disabled =
-                true;
-
-
-            startBtn.disabled =
-                false;
-
-
-            stopAllAudio();
-
-
-            try {
-
-                window.speechSynthesis.cancel();
-
-            } catch (e) {}
-
-
-            await showSessionSummary();
-
-
-            resetMonitor();
-
-        }
-    );
-
+                resetMonitor();
+            }
+        );
+    }
 
     // ============================================================
     // RESET
     // ============================================================
 
-    resetBtn.addEventListener(
-        "click",
-        async function () {
+    if (resetBtn) {
 
-            try {
+        resetBtn.addEventListener(
+            "click",
+            async function () {
 
-                await fetch(
-                    "/api/camera/reset",
-                    {
-                        method: "POST"
-                    }
-                );
+                try {
 
-            } catch (e) {}
+                    await fetch(
+                        "/api/camera/reset",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        }
+                    );
 
-        }
-    );
+                } catch (e) {}
 
+            }
+        );
+    }
 
     // ============================================================
-    // FRAME PROCESSING
+    // FRAME CAPTURE
     // ============================================================
 
     const captureCanvas =
-        document.createElement(
-            "canvas"
-        );
+        document.createElement("canvas");
 
+    const canvasContext =
+        captureCanvas.getContext("2d", {
+            willReadFrequently: false
+        });
+
+    // ============================================================
+    // SEND BROWSER FRAME TO FLASK
+    // ============================================================
 
     async function processBrowserFrame() {
 
         if (!running) {
-
             return;
-
         }
-
 
         if (processing) {
-
             return;
-
         }
 
+        if (!cameraVideo) {
+            return;
+        }
 
         if (
             !cameraVideo.videoWidth ||
             !cameraVideo.videoHeight
         ) {
-
             return;
-
         }
 
-
-        const now =
-            Date.now();
-
+        const now = Date.now();
 
         if (
             now - lastFrameTime <
             FRAME_INTERVAL
         ) {
-
             return;
-
         }
 
+        lastFrameTime = now;
 
-        lastFrameTime =
-            now;
-
-
-        processing =
-            true;
-
+        processing = true;
 
         try {
 
+            // Keep frame small for Render Free.
             const width =
                 Math.min(
                     cameraVideo.videoWidth,
                     640
                 );
 
-
             const height =
                 Math.round(
                     cameraVideo.videoHeight *
-                    (width /
-                    cameraVideo.videoWidth)
+                    (
+                        width /
+                        cameraVideo.videoWidth
+                    )
                 );
 
+            captureCanvas.width = width;
+            captureCanvas.height = height;
 
-            captureCanvas.width =
-                width;
-
-            captureCanvas.height =
-                height;
-
-
-            const ctx =
-                captureCanvas.getContext(
-                    "2d"
-                );
-
-
-            // Don't mirror here.
-            // Backend mirrors frame.
-            ctx.drawImage(
+            canvasContext.drawImage(
                 cameraVideo,
                 0,
                 0,
@@ -629,35 +632,38 @@
                 height
             );
 
-
             const blob =
                 await new Promise(
-                    resolve =>
+                    (resolve) => {
+
                         captureCanvas.toBlob(
                             resolve,
                             "image/jpeg",
-                            0.70
-                        )
+                            0.65
+                        );
+
+                    }
                 );
 
-
             if (!blob) {
-
                 return;
-
             }
 
+            // ====================================================
+            // IMPORTANT
+            // Send multipart JPEG to Flask.
+            // app.py should pass it to:
+            // camera.process_browser_frame(...)
+            // ====================================================
 
             const formData =
                 new FormData();
-
 
             formData.append(
                 "frame",
                 blob,
                 "camera.jpg"
             );
-
 
             const response =
                 await fetch(
@@ -668,96 +674,109 @@
                     }
                 );
 
-
             if (!response.ok) {
 
+                console.warn(
+                    "Frame API HTTP error:",
+                    response.status
+                );
+
                 return;
-
             }
-
 
             const result =
                 await response.json();
 
-
             if (!result.ok) {
 
                 console.warn(
+                    "Frame processing error:",
                     result.error
                 );
 
                 return;
-
             }
 
+            // ====================================================
+            // PROCESSED IMAGE
+            // ====================================================
 
-            const state =
-                result.state;
+            if (
+                result.image &&
+                feed
+            ) {
 
+                // Backend can return:
+                // data:image/jpeg;base64,...
+                // OR plain base64.
 
-            if (result.image) {
-
-                feed.src =
+                let imageSrc =
                     result.image;
 
+                if (
+                    !String(imageSrc)
+                        .startsWith("data:")
+                ) {
+
+                    imageSrc =
+                        "data:image/jpeg;base64," +
+                        imageSrc;
+                }
+
+                feed.src =
+                    imageSrc;
             }
 
+            // ====================================================
+            // STATE
+            // ====================================================
 
-            if (state) {
+            if (result.state) {
 
-                updateUI(state);
-
+                updateUI(
+                    result.state
+                );
             }
 
-        }
-
-        catch (error) {
+        } catch (error) {
 
             console.warn(
-                "Frame processing error:",
+                "Browser frame processing error:",
                 error
             );
 
+        } finally {
+
+            processing = false;
         }
-
-        finally {
-
-            processing =
-                false;
-
-        }
-
     }
 
+    // ============================================================
+    // PROCESSING LOOP
+    // ============================================================
 
     function startProcessing() {
 
         stopProcessing();
 
-
-        polling =
+        processingTimer =
             setInterval(
                 processBrowserFrame,
                 50
             );
-
     }
-
 
     function stopProcessing() {
 
-        if (polling) {
+        if (processingTimer) {
 
             clearInterval(
-                polling
+                processingTimer
             );
 
-            polling = null;
-
+            processingTimer = null;
         }
-
     }
-
 
     // ============================================================
     // UI UPDATE
@@ -765,68 +784,92 @@
 
     function updateUI(s) {
 
-        if (!s) return;
+        if (!s) {
+            return;
+        }
 
+        // --------------------------------------------------------
+        // Metrics
+        // --------------------------------------------------------
 
-        $("mEar").textContent =
-            fmt(s.ear);
+        if ($("mEar")) {
+            $("mEar").textContent =
+                fmt(s.ear);
+        }
 
+        if ($("mMar")) {
+            $("mMar").textContent =
+                fmt(s.mar);
+        }
 
-        $("mMar").textContent =
-            fmt(s.mar);
+        if ($("mPitch")) {
 
+            $("mPitch").textContent =
+                s.pitch != null
+                    ? Number(s.pitch).toFixed(0) + "°"
+                    : "-";
+        }
 
-        $("mPitch").textContent =
-            s.pitch != null
-                ? Number(s.pitch).toFixed(0) + "°"
-                : "-";
+        if ($("mYaw")) {
 
+            $("mYaw").textContent =
+                s.yaw != null
+                    ? Number(s.yaw).toFixed(0) + "°"
+                    : "-";
+        }
 
-        $("mYaw").textContent =
-            s.yaw != null
-                ? Number(s.yaw).toFixed(0) + "°"
-                : "-";
+        if ($("mPerclos")) {
 
+            $("mPerclos").textContent =
+                s.perclos != null
+                    ? (
+                        Number(s.perclos) * 100
+                    ).toFixed(0) + "%"
+                    : "-";
+        }
 
-        $("mPerclos").textContent =
-            s.perclos != null
-                ? (
-                    Number(s.perclos) *
-                    100
-                ).toFixed(0) + "%"
-                : "-";
+        if ($("mCnn")) {
 
+            $("mCnn").textContent =
+                s.cnn_closed_prob != null
+                    ? Number(
+                        s.cnn_closed_prob
+                    ).toFixed(2)
+                    : "n/a";
+        }
 
-        $("mCnn").textContent =
-            s.cnn_closed_prob != null
-                ? Number(
-                    s.cnn_closed_prob
-                ).toFixed(2)
-                : "n/a";
+        // --------------------------------------------------------
+        // Counters
+        // --------------------------------------------------------
 
+        if ($("cBlink")) {
+            $("cBlink").textContent =
+                s.blink_count || 0;
+        }
 
-        $("cBlink").textContent =
-            s.blink_count || 0;
+        if ($("cYawn")) {
+            $("cYawn").textContent =
+                s.yawn_count || 0;
+        }
 
+        if ($("cNod")) {
+            $("cNod").textContent =
+                s.nod_count || 0;
+        }
 
-        $("cYawn").textContent =
-            s.yawn_count || 0;
+        if ($("cDrowsy")) {
+            $("cDrowsy").textContent =
+                s.drowsy_events || 0;
+        }
 
-
-        $("cNod").textContent =
-            s.nod_count || 0;
-
-
-        $("cDrowsy").textContent =
-            s.drowsy_events || 0;
-
+        // --------------------------------------------------------
+        // Status
+        // --------------------------------------------------------
 
         const level =
-            (
-                s.level ||
-                "ALERT"
+            String(
+                s.level || "ALERT"
             ).toLowerCase();
-
 
         setLevel(
             level,
@@ -834,43 +877,22 @@
             s.score || 0
         );
 
+        // --------------------------------------------------------
+        // Panels
+        // --------------------------------------------------------
 
-        updateMonitor(
-            s
-        );
+        updateMonitor(s);
+        updateSafety(s);
+        updateMobile(s);
 
+        playAlertSound(s);
 
-        updateSafety(
-            s
-        );
+        maybeSpeak(s);
 
+        updateBreak(s);
 
-        updateMobile(
-            s
-        );
-
-
-        playAlertSound(
-            s
-        );
-
-
-        maybeSpeak(
-            s
-        );
-
-
-        updateBreak(
-            s
-        );
-
-
-        updateCharts(
-            s
-        );
-
+        updateCharts(s);
     }
-
 
     // ============================================================
     // STATUS
@@ -882,62 +904,67 @@
         score
     ) {
 
+        if (!statusCard) {
+            return;
+        }
+
         statusCard.className =
             "card status-card level-" +
             level;
 
+        if ($("statusText")) {
 
-        $("statusText").textContent =
-            text;
+            $("statusText").textContent =
+                text;
+        }
 
+        if ($("scoreNum")) {
 
-        $("scoreNum").textContent =
-            Math.round(
-                score
-            );
-
+            $("scoreNum").textContent =
+                Math.round(
+                    Number(score) || 0
+                );
+        }
 
         const fill =
             $("scoreFill");
 
+        if (fill) {
 
-        fill.style.width =
-            Math.min(
-                Number(score) || 0,
-                100
-            ) + "%";
+            const value =
+                Math.max(
+                    0,
+                    Math.min(
+                        Number(score) || 0,
+                        100
+                    )
+                );
 
+            fill.style.width =
+                value + "%";
 
-        if (
-            level === "drowsy"
-        ) {
+            if (level === "drowsy") {
 
-            fill.style.background =
-                "#ef4444";
+                fill.style.background =
+                    "#ef4444";
 
+            } else if (
+                level === "warning"
+            ) {
+
+                fill.style.background =
+                    "#f59e0b";
+
+            } else {
+
+                fill.style.background =
+                    "#22c55e";
+            }
         }
-
-        else if (
-            level === "warning"
-        ) {
-
-            fill.style.background =
-                "#f59e0b";
-
-        }
-
-        else {
-
-            fill.style.background =
-                "#22c55e";
-
-        }
-
     }
 
-
     // ============================================================
-    // MONITOR
+    // PILLS
     // ============================================================
 
     function pill(
@@ -946,25 +973,26 @@
         state
     ) {
 
-        if (!element) return;
-
+        if (!element) {
+            return;
+        }
 
         element.textContent =
             text;
 
-
         element.className =
             "pill st-" +
             state;
-
     }
 
+    // ============================================================
+    // MONITOR
+    // ============================================================
 
     function updateMonitor(s) {
 
         const face =
             !!s.face_detected;
-
 
         pill(
             $("stFace"),
@@ -976,7 +1004,7 @@
                 : "alert"
         );
 
-
+        // Eyes
         if (!face) {
 
             pill(
@@ -985,9 +1013,7 @@
                 "idle"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stEyes"),
@@ -998,10 +1024,9 @@
                     ? "warn"
                     : "normal"
             );
-
         }
 
-
+        // Drowsiness
         if (s.drowsiness) {
 
             pill(
@@ -1010,10 +1035,9 @@
                 "alert"
             );
 
-        }
-
-        else if (
-            s.level ===
+        } else if (
+            String(s.level || "")
+                .toUpperCase() ===
             "WARNING"
         ) {
 
@@ -1023,9 +1047,7 @@
                 "warn"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stDrowsy"),
@@ -1036,17 +1058,14 @@
                     ? "normal"
                     : "idle"
             );
-
         }
 
-
+        // Attention
         const attention =
             s.attention;
 
-
         if (
-            attention ===
-            "left"
+            attention === "left"
         ) {
 
             pill(
@@ -1055,11 +1074,8 @@
                 "alert"
             );
 
-        }
-
-        else if (
-            attention ===
-            "right"
+        } else if (
+            attention === "right"
         ) {
 
             pill(
@@ -1068,12 +1084,8 @@
                 "alert"
             );
 
-        }
-
-        else if (
-            attention ===
-            "no_face"
-            ||
+        } else if (
+            attention === "no_face" ||
             !face
         ) {
 
@@ -1083,19 +1095,16 @@
                 "idle"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stAttention"),
                 "Forward",
                 "normal"
             );
-
         }
 
-
+        // Sunglasses
         if (!face) {
 
             pill(
@@ -1104,9 +1113,7 @@
                 "idle"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stGlasses"),
@@ -1117,14 +1124,9 @@
                     ? "warn"
                     : "normal"
             );
-
         }
 
-
-        const coverage =
-            s.face_coverage;
-
-
+        // Face coverage
         const coverageMap = {
 
             clear: [
@@ -1146,27 +1148,22 @@
                 "Not visible",
                 "alert"
             ]
-
         };
-
 
         const item =
             coverageMap[
-                coverage
+                s.face_coverage
             ] || [
                 "–",
                 "idle"
             ];
-
 
         pill(
             $("stCoverage"),
             item[0],
             item[1]
         );
-
     }
-
 
     // ============================================================
     // SAFETY
@@ -1179,79 +1176,66 @@
             : v >= 45
                 ? "#f59e0b"
                 : "#ef4444";
-
     }
-
 
     function updateSafety(s) {
 
         const attention =
             s.attention_score;
 
-
         const safety =
             s.safety_score;
 
-
         if (
-            attention != null
+            attention != null &&
+            $("attNum") &&
+            $("attFill")
         ) {
 
             $("attNum").textContent =
-                Math.round(
-                    attention
-                );
-
+                Math.round(attention);
 
             $("attFill").style.width =
                 Math.max(
                     0,
                     Math.min(
                         100,
-                        attention
+                        Number(attention)
                     )
                 ) + "%";
 
-
             $("attFill").style.background =
                 scoreColor(
-                    attention
+                    Number(attention)
                 );
-
         }
 
-
         if (
-            safety != null
+            safety != null &&
+            $("safeNum") &&
+            $("safeFill")
         ) {
 
             $("safeNum").textContent =
-                Math.round(
-                    safety
-                );
-
+                Math.round(safety);
 
             $("safeFill").style.width =
                 Math.max(
                     0,
                     Math.min(
                         100,
-                        safety
+                        Number(safety)
                     )
                 ) + "%";
 
-
             $("safeFill").style.background =
                 scoreColor(
-                    safety
+                    Number(safety)
                 );
-
         }
-
 
         const risk =
             s.risk_level;
-
 
         if (risk) {
 
@@ -1264,20 +1248,17 @@
                         ? "warn"
                         : "alert"
             );
-
         }
 
-
+        // Distraction
         if (
             s.distraction_active
         ) {
 
             const duration =
                 Number(
-                    s.distraction_duration ||
-                    0
+                    s.distraction_duration || 0
                 ).toFixed(1);
-
 
             pill(
                 $("stDistract"),
@@ -1287,9 +1268,7 @@
                     : "warn"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stDistract"),
@@ -1300,17 +1279,14 @@
                     ? "normal"
                     : "idle"
             );
-
         }
 
-
+        // Fatigue
         const trend =
             s.fatigue_trend;
 
-
         if (
-            trend ===
-            "INCREASING"
+            trend === "INCREASING"
         ) {
 
             pill(
@@ -1319,11 +1295,8 @@
                 "alert"
             );
 
-        }
-
-        else if (
-            trend ===
-            "DECREASING"
+        } else if (
+            trend === "DECREASING"
         ) {
 
             pill(
@@ -1332,11 +1305,8 @@
                 "normal"
             );
 
-        }
-
-        else if (
-            trend ===
-            "STABLE"
+        } else if (
+            trend === "STABLE"
         ) {
 
             pill(
@@ -1345,20 +1315,15 @@
                 "normal"
             );
 
-        }
-
-        else {
+        } else {
 
             pill(
                 $("stFatigue"),
                 "–",
                 "idle"
             );
-
         }
-
     }
-
 
     // ============================================================
     // MOBILE
@@ -1367,33 +1332,37 @@
     function updateMobile(s) {
 
         if (
-            s.video_storage != null
+            s.video_storage != null &&
+            $("videoStorage")
         ) {
 
             $("videoStorage").textContent =
                 s.video_storage
                     ? "ON"
                     : "OFF";
-
         }
 
-
         if (
-            s.camera_processing
+            s.camera_processing &&
+            $("camProc")
         ) {
 
             $("camProc").textContent =
                 s.camera_processing;
-
         }
-
 
         const n =
             s.notifications;
 
+        if (!n) {
+            return;
+        }
 
-        if (!n) return;
-
+        if (
+            !$("notifBadge")
+        ) {
+            return;
+        }
 
         if (!n.enabled) {
 
@@ -1403,9 +1372,7 @@
             $("notifBadge").className =
                 "badge badge-off";
 
-        }
-
-        else if (
+        } else if (
             n.configured
         ) {
 
@@ -1415,56 +1382,54 @@
             $("notifBadge").className =
                 "badge badge-on";
 
-        }
-
-        else {
+        } else {
 
             $("notifBadge").textContent =
                 "SIMULATED";
 
             $("notifBadge").className =
                 "badge badge-warnb";
-
         }
 
+        if ($("notifProvider")) {
 
-        $("notifProvider").textContent =
-            n.provider || "–";
-
+            $("notifProvider").textContent =
+                n.provider || "–";
+        }
     }
-
 
     // ============================================================
     // BREAK
     // ============================================================
 
-    let breakDismissed =
-        false;
-
+    let breakDismissed = false;
 
     function updateBreak(s) {
 
         const banner =
             $("breakBanner");
 
+        if (!banner) {
+            return;
+        }
 
         if (
             s.break_recommended &&
             !breakDismissed
         ) {
 
-            $("breakText").textContent =
-                s.break_text ||
-                "Take a short break.";
+            if ($("breakText")) {
 
+                $("breakText").textContent =
+                    s.break_text ||
+                    "Take a short break.";
+            }
 
             banner.classList.remove(
                 "hidden"
             );
 
-        }
-
-        else if (
+        } else if (
             !s.break_recommended
         ) {
 
@@ -1472,44 +1437,46 @@
                 "hidden"
             );
 
-            breakDismissed =
-                false;
-
+            breakDismissed = false;
         }
-
     }
 
+    const breakDismiss =
+        $("breakDismiss");
 
-    $("breakDismiss").addEventListener(
-        "click",
-        function () {
+    if (breakDismiss) {
 
-            $("breakBanner")
-                .classList
-                .add("hidden");
+        breakDismiss.addEventListener(
+            "click",
+            function () {
 
-            breakDismissed =
-                true;
+                const banner =
+                    $("breakBanner");
 
-        }
-    );
+                if (banner) {
 
+                    banner.classList.add(
+                        "hidden"
+                    );
+                }
+
+                breakDismissed = true;
+            }
+        );
+    }
 
     // ============================================================
     // VOICE
     // ============================================================
 
-    let lastVoiceKey =
-        null;
-
-    let lastVoiceAt =
-        0;
-
+    let lastVoiceKey = null;
+    let lastVoiceAt = 0;
 
     const VOICE_COOLDOWN =
-        (window.VOICE_COOLDOWN || 8) *
-        1000;
-
+        (
+            window.VOICE_COOLDOWN ||
+            8
+        ) * 1000;
 
     function maybeSpeak(s) {
 
@@ -1517,61 +1484,41 @@
             !voiceToggle ||
             !voiceToggle.checked
         ) {
-
             return;
-
         }
-
 
         if (
             !("speechSynthesis" in window)
         ) {
-
             return;
-
         }
-
 
         const key =
             s.voice_key;
 
-
         const text =
             s.voice_text;
-
 
         if (
             !key ||
             !text
         ) {
-
             return;
-
         }
-
 
         const now =
             Date.now();
-
 
         if (
             key === lastVoiceKey &&
             now - lastVoiceAt <
             VOICE_COOLDOWN
         ) {
-
             return;
-
         }
 
-
-        lastVoiceKey =
-            key;
-
-
-        lastVoiceAt =
-            now;
-
+        lastVoiceKey = key;
+        lastVoiceAt = now;
 
         try {
 
@@ -1580,149 +1527,79 @@
                     text
                 );
 
-
-            utterance.rate =
-                1.02;
-
-
-            utterance.pitch =
-                1;
-
-
-            utterance.volume =
-                1;
-
+            utterance.rate = 1.02;
+            utterance.pitch = 1;
+            utterance.volume = 1;
 
             window.speechSynthesis.cancel();
-
 
             window.speechSynthesis.speak(
                 utterance
             );
 
         } catch (e) {}
-
     }
-
 
     // ============================================================
     // CHARTS
     // ============================================================
 
     let scoreHistory = [];
-
     let earHistory = [];
-
     let marHistory = [];
-
     let attentionHistory = [];
-
     let safetyHistory = [];
 
+    const MAX_POINTS = 60;
+
+    function pushHistory(
+        array,
+        value
+    ) {
+
+        array.push({
+            x: new Date()
+                .toLocaleTimeString(),
+            y: Number(value || 0)
+        });
+
+        if (
+            array.length >
+            MAX_POINTS
+        ) {
+
+            array.shift();
+        }
+    }
 
     function updateCharts(s) {
 
-        const time =
-            new Date()
-                .toLocaleTimeString();
+        pushHistory(
+            scoreHistory,
+            s.score
+        );
 
+        pushHistory(
+            earHistory,
+            s.ear
+        );
 
-        scoreHistory.push({
-            x: time,
-            y: Number(
-                s.score || 0
-            )
-        });
+        pushHistory(
+            marHistory,
+            s.mar
+        );
 
+        pushHistory(
+            attentionHistory,
+            s.attention_score
+        );
 
-        earHistory.push({
-            x: time,
-            y: Number(
-                s.ear || 0
-            )
-        });
+        pushHistory(
+            safetyHistory,
+            s.safety_score
+        );
 
-
-        marHistory.push({
-            x: time,
-            y: Number(
-                s.mar || 0
-            )
-        });
-
-
-        attentionHistory.push({
-            x: time,
-            y: Number(
-                s.attention_score ||
-                0
-            )
-        });
-
-
-        safetyHistory.push({
-            x: time,
-            y: Number(
-                s.safety_score ||
-                0
-            )
-        });
-
-
-        const MAX =
-            60;
-
-
-        if (
-            scoreHistory.length >
-            MAX
-        ) {
-
-            scoreHistory.shift();
-
-        }
-
-
-        if (
-            earHistory.length >
-            MAX
-        ) {
-
-            earHistory.shift();
-
-        }
-
-
-        if (
-            marHistory.length >
-            MAX
-        ) {
-
-            marHistory.shift();
-
-        }
-
-
-        if (
-            attentionHistory.length >
-            MAX
-        ) {
-
-            attentionHistory.shift();
-
-        }
-
-
-        if (
-            safetyHistory.length >
-            MAX
-        ) {
-
-            safetyHistory.shift();
-
-        }
-
-
+        // Score chart
         if (
             window.scoreChart
         ) {
@@ -1732,31 +1609,107 @@
                     p => p.x
                 );
 
-
             window.scoreChart.data.datasets[0].data =
                 scoreHistory.map(
                     p => p.y
                 );
 
-
             window.scoreChart.update(
                 "none"
             );
-
         }
 
+        // EAR / MAR chart
+        if (
+            window.earMarChart
+        ) {
+
+            window.earMarChart.data.labels =
+                earHistory.map(
+                    p => p.x
+                );
+
+            if (
+                window.earMarChart
+                    .data
+                    .datasets
+                    .length >= 2
+            ) {
+
+                window.earMarChart
+                    .data
+                    .datasets[0]
+                    .data =
+                    earHistory.map(
+                        p => p.y
+                    );
+
+                window.earMarChart
+                    .data
+                    .datasets[1]
+                    .data =
+                    marHistory.map(
+                        p => p.y
+                    );
+            }
+
+            window.earMarChart.update(
+                "none"
+            );
+        }
+
+        // Safety chart
+        if (
+            window.safetyChart
+        ) {
+
+            window.safetyChart.data.labels =
+                attentionHistory.map(
+                    p => p.x
+                );
+
+            if (
+                window.safetyChart
+                    .data
+                    .datasets
+                    .length >= 2
+            ) {
+
+                window.safetyChart
+                    .data
+                    .datasets[0]
+                    .data =
+                    attentionHistory.map(
+                        p => p.y
+                    );
+
+                window.safetyChart
+                    .data
+                    .datasets[1]
+                    .data =
+                    safetyHistory.map(
+                        p => p.y
+                    );
+            }
+
+            window.safetyChart.update(
+                "none"
+            );
+        }
     }
 
-
     // ============================================================
-    // SUMMARY
+    // SESSION SUMMARY
     // ============================================================
 
     const summaryModal =
         $("summaryModal");
 
-
     async function showSessionSummary() {
+
+        if (!summaryModal) {
+            return;
+        }
 
         try {
 
@@ -1765,28 +1718,24 @@
                     "/api/session/summary"
                 );
 
-
             const sum =
                 await response.json();
-
 
             if (
                 !sum ||
                 !sum.duration_seconds
             ) {
-
                 return;
-
             }
-
 
             const body =
                 $("summaryBody");
 
+            if (!body) {
+                return;
+            }
 
-            body.innerHTML =
-                "";
-
+            body.innerHTML = "";
 
             const rows = [
 
@@ -1828,10 +1777,18 @@
                 [
                     "right_look_events",
                     "Right glances"
+                ],
+
+                [
+                    "face_covered_events",
+                    "Face covered"
+                ],
+
+                [
+                    "total_distraction_hms",
+                    "Time distracted"
                 ]
-
             ];
-
 
             rows.forEach(
                 ([key, label]) => {
@@ -1840,16 +1797,13 @@
                         sum[key] ??
                         "–";
 
-
                     const cell =
                         document.createElement(
                             "div"
                         );
 
-
                     cell.className =
                         "summary-cell";
-
 
                     cell.innerHTML =
                         `
@@ -1861,59 +1815,70 @@
                         </div>
                         `;
 
-
                     body.appendChild(
                         cell
                     );
-
                 }
             );
-
 
             summaryModal.classList.remove(
                 "hidden"
             );
 
+        } catch (e) {
+
+            console.warn(
+                "Summary error:",
+                e
+            );
         }
-
-        catch (e) {}
-
     }
 
+    const summaryClose =
+        $("summaryClose");
 
-    $("summaryClose").addEventListener(
-        "click",
-        function () {
+    if (summaryClose) {
 
-            summaryModal.classList.add(
-                "hidden"
-            );
+        summaryClose.addEventListener(
+            "click",
+            function () {
 
-        }
-    );
+                summaryModal.classList.add(
+                    "hidden"
+                );
+            }
+        );
+    }
 
+    const exportCsvBtn =
+        $("exportCsvBtn");
 
-    $("exportCsvBtn").addEventListener(
-        "click",
-        function () {
+    if (exportCsvBtn) {
 
-            window.location =
-                "/api/events/export?fmt=csv";
+        exportCsvBtn.addEventListener(
+            "click",
+            function () {
 
-        }
-    );
+                window.location =
+                    "/api/events/export?fmt=csv";
+            }
+        );
+    }
 
+    const exportJsonBtn =
+        $("exportJsonBtn");
 
-    $("exportJsonBtn").addEventListener(
-        "click",
-        function () {
+    if (exportJsonBtn) {
 
-            window.location =
-                "/api/events/export?fmt=json";
+        exportJsonBtn.addEventListener(
+            "click",
+            function () {
 
-        }
-    );
-
+                window.location =
+                    "/api/events/export?fmt=json";
+            }
+        );
+    }
 
     // ============================================================
     // RESET UI
@@ -1929,14 +1894,15 @@
             "stGlasses",
             "stCoverage"
         ].forEach(
-            id =>
+            (id) => {
+
                 pill(
                     $(id),
                     "–",
                     "idle"
-                )
+                );
+            }
         );
-
 
         pill(
             $("riskPill"),
@@ -1944,13 +1910,11 @@
             "idle"
         );
 
-
         pill(
             $("stDistract"),
             "–",
             "idle"
         );
-
 
         pill(
             $("stFatigue"),
@@ -1958,29 +1922,42 @@
             "idle"
         );
 
+        if ($("attNum")) {
+            $("attNum").textContent =
+                "–";
+        }
 
-        $("attNum").textContent =
-            "–";
+        if ($("safeNum")) {
+            $("safeNum").textContent =
+                "–";
+        }
 
+        if ($("attFill")) {
+            $("attFill").style.width =
+                "0%";
+        }
 
-        $("safeNum").textContent =
-            "–";
+        if ($("safeFill")) {
+            $("safeFill").style.width =
+                "0%";
+        }
 
+        if ($("breakBanner")) {
 
-        $("attFill").style.width =
-            "0%";
+            $("breakBanner")
+                .classList
+                .add("hidden");
+        }
 
+        breakDismissed = false;
+        lastVoiceKey = null;
 
-        $("safeFill").style.width =
-            "0%";
-
-
-        $("breakBanner")
-            .classList
-            .add("hidden");
-
+        scoreHistory = [];
+        earHistory = [];
+        marHistory = [];
+        attentionHistory = [];
+        safetyHistory = [];
     }
-
 
     // ============================================================
     // INITIAL STATE
@@ -1995,23 +1972,24 @@
                     "/api/state"
                 );
 
+            if (!response.ok) {
+                return;
+            }
 
             const state =
                 await response.json();
 
+            updateMobile(state);
 
-            updateMobile(
-                state
+        } catch (e) {
+
+            console.warn(
+                "Initial state error:",
+                e
             );
-
         }
-
-        catch (e) {}
-
     }
 
-
     loadInitialState();
-
 
 })();
