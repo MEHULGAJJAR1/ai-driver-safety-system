@@ -1772,7 +1772,7 @@ if __name__ == "__main__":
 
         host=config.HOST,
 
-        port=config.PORT,
+        port=5001,
 
         debug=config.DEBUG,
 

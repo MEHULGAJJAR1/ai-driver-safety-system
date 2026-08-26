@@ -20,9 +20,8 @@
     const alarmFlash = $("alarmFlash");
     const statusCard = $("statusCard");
 
-
     // ============================================================
-    // CAMERA
+    // BROWSER CAMERA VIDEO
     // ============================================================
 
     let cameraVideo = $("cameraVideo");
@@ -33,258 +32,40 @@
 
         cameraVideo.id = "cameraVideo";
 
+        cameraVideo.autoplay = true;
+        cameraVideo.playsInline = true;
+        cameraVideo.muted = true;
+
+        cameraVideo.style.display = "none";
+        cameraVideo.style.position = "absolute";
+        cameraVideo.style.width = "1px";
+        cameraVideo.style.height = "1px";
+        cameraVideo.style.opacity = "0";
+        cameraVideo.style.pointerEvents = "none";
+
         document.body.appendChild(cameraVideo);
     }
 
-    cameraVideo.autoplay = true;
-    cameraVideo.playsInline = true;
-    cameraVideo.muted = true;
-
-    cameraVideo.style.width = "100%";
-    cameraVideo.style.height = "100%";
-    cameraVideo.style.objectFit = "cover";
-    cameraVideo.style.display = "none";
-
-
     let cameraStream = null;
-
     let running = false;
-
     let processing = false;
-
     let processingTimer = null;
 
     let lastFrameTime = 0;
 
+    // Render Free/server ko overload na karne ke liye
+    const FRAME_INTERVAL = 400;
 
     // ============================================================
-    // PERFORMANCE
+    // AUDIO
     // ============================================================
 
-    /*
-     * IMPORTANT:
-     *
-     * Camera = LIVE locally
-     *
-     * AI = background server processing
-     *
-     * Isse camera Render ke inference se block nahi hoga.
-     */
-
-    const AI_INTERVAL = 700;
-
-    const AI_WIDTH = 320;
-
-    const JPEG_QUALITY = 0.45;
-
-
-    // ============================================================
-    // CANVAS
-    // ============================================================
-
-    const captureCanvas =
-        document.createElement("canvas");
-
-    const canvasContext =
-        captureCanvas.getContext("2d");
-
-
-    // ============================================================
-    // AUDIO ELEMENTS
-    // ============================================================
-
-    const sndDrowsiness =
-        $("sndDrowsiness");
-
-    const sndSideLook =
-        $("sndSideLook");
-
-    const sndFaceCovered =
-        $("sndFaceCovered");
-
-    const sndCritical =
-        $("sndCritical");
-
+    const sndDrowsiness = $("sndDrowsiness");
+    const sndSideLook = $("sndSideLook");
+    const sndFaceCovered = $("sndFaceCovered");
+    const sndCritical = $("sndCritical");
 
     let currentSound = null;
-
-    let audioContext = null;
-
-    let alarmOscillator = null;
-
-    let alarmGain = null;
-
-    let alarmInterval = null;
-
-
-    // ============================================================
-    // WEB AUDIO UNLOCK
-    // ============================================================
-
-    function initAudio() {
-
-        try {
-
-            if (!audioContext) {
-
-                audioContext =
-                    new (
-                        window.AudioContext ||
-                        window.webkitAudioContext
-                    )();
-            }
-
-
-            if (
-                audioContext.state ===
-                "suspended"
-            ) {
-
-                audioContext.resume();
-            }
-
-        } catch (e) {
-
-            console.warn(
-                "Audio initialization failed:",
-                e
-            );
-        }
-    }
-
-
-    // ============================================================
-    // FALLBACK ALARM
-    // ============================================================
-
-    function startFallbackAlarm(
-        critical = false
-    ) {
-
-        stopFallbackAlarm();
-
-
-        try {
-
-            initAudio();
-
-            if (!audioContext) {
-                return;
-            }
-
-
-            const playBeep = () => {
-
-                if (
-                    !audioContext ||
-                    audioContext.state ===
-                    "suspended"
-                ) {
-
-                    return;
-                }
-
-
-                const oscillator =
-                    audioContext.createOscillator();
-
-                const gain =
-                    audioContext.createGain();
-
-
-                oscillator.type =
-                    "square";
-
-
-                oscillator.frequency.value =
-                    critical
-                        ? 950
-                        : 650;
-
-
-                gain.gain.setValueAtTime(
-                    0.0001,
-                    audioContext.currentTime
-                );
-
-
-                gain.gain.exponentialRampToValueAtTime(
-                    0.12,
-                    audioContext.currentTime + 0.02
-                );
-
-
-                gain.gain.exponentialRampToValueAtTime(
-                    0.0001,
-                    audioContext.currentTime + 0.22
-                );
-
-
-                oscillator.connect(gain);
-
-                gain.connect(
-                    audioContext.destination
-                );
-
-
-                oscillator.start();
-
-                oscillator.stop(
-                    audioContext.currentTime +
-                    0.25
-                );
-            };
-
-
-            playBeep();
-
-
-            alarmInterval =
-                setInterval(
-                    playBeep,
-                    critical
-                        ? 450
-                        : 750
-                );
-
-        } catch (e) {
-
-            console.warn(
-                "Fallback alarm failed:",
-                e
-            );
-        }
-    }
-
-
-    function stopFallbackAlarm() {
-
-        if (alarmInterval) {
-
-            clearInterval(
-                alarmInterval
-            );
-
-            alarmInterval = null;
-        }
-
-
-        try {
-
-            if (alarmOscillator) {
-
-                alarmOscillator.stop();
-
-                alarmOscillator = null;
-            }
-
-        } catch (e) {}
-    }
-
-
-    // ============================================================
-    // STOP ALL AUDIO
-    // ============================================================
 
     function stopAllAudio() {
 
@@ -293,29 +74,19 @@
             sndSideLook,
             sndFaceCovered,
             sndCritical
-        ].forEach(
-            (audio) => {
+        ].forEach((audio) => {
 
-                if (!audio) {
-                    return;
-                }
-
-                try {
-
-                    audio.pause();
-
-                    audio.currentTime = 0;
-
-                } catch (e) {}
+            if (!audio) {
+                return;
             }
-        );
 
+            try {
+                audio.pause();
+                audio.currentTime = 0;
+            } catch (e) {}
+        });
 
         currentSound = null;
-
-
-        stopFallbackAlarm();
-
 
         if (alarmFlash) {
 
@@ -327,157 +98,144 @@
         }
     }
 
+    // ============================================================
+    // AUDIO UNLOCK
+    // ============================================================
+
+    function unlockAudio() {
+
+        [
+            sndDrowsiness,
+            sndSideLook,
+            sndFaceCovered,
+            sndCritical
+        ].forEach((audio) => {
+
+            if (!audio) {
+                return;
+            }
+
+            try {
+
+                audio.muted = true;
+
+                const promise = audio.play();
+
+                if (promise && promise.then) {
+
+                    promise
+                        .then(() => {
+
+                            audio.pause();
+                            audio.currentTime = 0;
+                            audio.muted = false;
+
+                        })
+                        .catch(() => {
+
+                            audio.muted = false;
+
+                        });
+                }
+
+            } catch (e) {
+
+                try {
+                    audio.muted = false;
+                } catch (err) {}
+
+            }
+        });
+    }
 
     // ============================================================
-    // PLAY ALERT
+    // PLAY ALERT SOUND
     // ============================================================
 
     function playAlertSound(state) {
 
-        if (
-            !alarmToggle ||
-            !alarmToggle.checked
-        ) {
+        if (!alarmToggle || !alarmToggle.checked) {
 
             stopAllAudio();
-
             return;
         }
 
-
-        if (
-            !state ||
-            !state.alert_active
-        ) {
+        if (!state || !state.alert_active) {
 
             stopAllAudio();
-
             return;
         }
 
+        let desired = null;
 
         const type =
             String(
                 state.alert_type || ""
             ).toUpperCase();
 
+        if (type.includes("CRITICAL")) {
 
-        let desired = null;
+            desired = sndCritical;
 
+        } else if (type.includes("SIDE_LOOK")) {
 
-        if (
-            type.includes("CRITICAL")
-        ) {
-
-            desired =
-                sndCritical;
-
-        } else if (
-            type.includes("SIDE_LOOK")
-        ) {
-
-            desired =
-                sndSideLook;
+            desired = sndSideLook;
 
         } else if (
             type.includes("FACE") ||
             type.includes("COVERED")
         ) {
 
-            desired =
-                sndFaceCovered;
+            desired = sndFaceCovered;
 
         } else {
 
-            desired =
-                sndDrowsiness;
+            desired = sndDrowsiness;
         }
 
+        if (!desired) {
 
-        // --------------------------------------------------------
-        // Flash
-        // --------------------------------------------------------
+            stopAllAudio();
+            return;
+        }
+
+        if (desired === currentSound) {
+            return;
+        }
+
+        stopAllAudio();
+
+        try {
+
+            desired.loop = true;
+            desired.currentTime = 0;
+
+            const promise =
+                desired.play();
+
+            if (promise && promise.catch) {
+                promise.catch(() => {});
+            }
+
+            currentSound = desired;
+
+        } catch (e) {}
 
         if (alarmFlash) {
 
-            alarmFlash.classList.add(
-                "on"
-            );
-
+            alarmFlash.classList.add("on");
 
             alarmFlash.classList.toggle(
                 "warn",
                 type.includes("SIDE_LOOK")
             );
 
-
             alarmFlash.classList.toggle(
                 "crit",
                 type.includes("CRITICAL")
             );
         }
-
-
-        // --------------------------------------------------------
-        // Try existing audio
-        // --------------------------------------------------------
-
-        if (
-            desired &&
-            desired !== currentSound
-        ) {
-
-            try {
-
-                stopAllAudio();
-
-                desired.loop = true;
-
-                desired.currentTime = 0;
-
-                const promise =
-                    desired.play();
-
-
-                if (
-                    promise &&
-                    promise.catch
-                ) {
-
-                    promise.catch(
-                        () => {}
-                    );
-                }
-
-
-                currentSound =
-                    desired;
-
-
-                return;
-
-            } catch (e) {}
-        }
-
-
-        // --------------------------------------------------------
-        // FALLBACK WEB AUDIO
-        // --------------------------------------------------------
-
-        if (
-            !currentSound
-        ) {
-
-            startFallbackAlarm(
-                type.includes("CRITICAL")
-            );
-        }
     }
-
-
-    // ============================================================
-    // AUDIO TOGGLE
-    // ============================================================
 
     if (alarmToggle) {
 
@@ -485,25 +243,26 @@
             "change",
             function () {
 
-                initAudio();
-
-
-                if (
-                    !alarmToggle.checked
-                ) {
-
+                if (!alarmToggle.checked) {
                     stopAllAudio();
                 }
             }
         );
     }
 
-
     // ============================================================
-    // OPEN CAMERA
+    // BROWSER CAMERA
     // ============================================================
 
     async function openBrowserCamera() {
+
+        console.log(
+            "[CAMERA] Opening browser camera..."
+        );
+
+        // --------------------------------------------------------
+        // CAMERA API CHECK
+        // --------------------------------------------------------
 
         if (
             !navigator.mediaDevices ||
@@ -511,10 +270,38 @@
         ) {
 
             throw new Error(
-                "Camera API is not supported."
+                "Camera API is not supported by this browser/context."
             );
         }
 
+        // --------------------------------------------------------
+        // SECURE CONTEXT CHECK
+        //
+        // Allowed:
+        // https://
+        // http://localhost
+        // http://127.0.0.1
+        //
+        // NOT allowed:
+        // http://192.168.x.x
+        // --------------------------------------------------------
+
+        if (
+            location.protocol !== "https:" &&
+            location.hostname !== "localhost" &&
+            location.hostname !== "127.0.0.1"
+        ) {
+
+            throw new Error(
+                "Camera requires HTTPS. " +
+                "For local testing open http://127.0.0.1:5001 " +
+                "or use the Render HTTPS URL."
+            );
+        }
+
+        // --------------------------------------------------------
+        // CAMERA PERMISSION
+        // --------------------------------------------------------
 
         const stream =
             await navigator.mediaDevices.getUserMedia({
@@ -534,55 +321,116 @@
                     },
 
                     frameRate: {
-                        ideal: 20,
-                        max: 30
+                        ideal: 15,
+                        max: 24
                     }
                 },
 
                 audio: false
             });
 
+        // --------------------------------------------------------
+        // SAVE STREAM
+        // --------------------------------------------------------
 
-        cameraStream =
-            stream;
+        cameraStream = stream;
 
+        cameraVideo.srcObject = stream;
 
-        cameraVideo.srcObject =
-            stream;
+        cameraVideo.muted = true;
+        cameraVideo.playsInline = true;
+        cameraVideo.autoplay = true;
 
+        // --------------------------------------------------------
+        // WAIT UNTIL CAMERA VIDEO HAS DATA
+        // --------------------------------------------------------
+
+        await new Promise(
+            (resolve, reject) => {
+
+                let finished = false;
+
+                const finish = () => {
+
+                    if (finished) {
+                        return;
+                    }
+
+                    finished = true;
+
+                    clearTimeout(timeout);
+
+                    resolve();
+                };
+
+                const fail = (error) => {
+
+                    if (finished) {
+                        return;
+                    }
+
+                    finished = true;
+
+                    clearTimeout(timeout);
+
+                    reject(error);
+                };
+
+                const timeout =
+                    setTimeout(
+                        () => {
+
+                            fail(
+                                new Error(
+                                    "Camera video did not start."
+                                )
+                            );
+
+                        },
+                        10000
+                    );
+
+                cameraVideo.onloadedmetadata =
+                    finish;
+
+                cameraVideo.oncanplay =
+                    finish;
+
+                cameraVideo.onerror =
+                    () => {
+
+                        fail(
+                            new Error(
+                                "Browser camera video error."
+                            )
+                        );
+                    };
+
+                if (
+                    cameraVideo.readyState >= 1
+                ) {
+
+                    finish();
+                }
+            }
+        );
+
+        // --------------------------------------------------------
+        // PLAY CAMERA
+        // --------------------------------------------------------
 
         await cameraVideo.play();
 
-
-        cameraVideo.style.display =
-            "block";
-
-
-        // --------------------------------------------------------
-        // HIDE OLD SERVER IMAGE
-        // --------------------------------------------------------
-
-        if (feed) {
-
-            feed.style.display =
-                "none";
-
-            feed.removeAttribute(
-                "src"
-            );
-        }
-
-
-        if (placeholder) {
-
-            placeholder.style.display =
-                "none";
-        }
+        console.log(
+            "[CAMERA] Started:",
+            cameraVideo.videoWidth,
+            "x",
+            cameraVideo.videoHeight
+        );
     }
 
-
     // ============================================================
-    // CLOSE CAMERA
+    // CLOSE BROWSER CAMERA
     // ============================================================
 
     function closeBrowserCamera() {
@@ -595,38 +443,27 @@
                     (track) => {
 
                         try {
-
                             track.stop();
-
                         } catch (e) {}
+
                     }
                 );
 
             cameraStream = null;
         }
 
-
         if (cameraVideo) {
 
             try {
-
                 cameraVideo.pause();
-
             } catch (e) {}
 
-
-            cameraVideo.srcObject =
-                null;
-
-
-            cameraVideo.style.display =
-                "none";
+            cameraVideo.srcObject = null;
         }
     }
 
-
     // ============================================================
-    // START
+    // START CAMERA
     // ============================================================
 
     if (startBtn) {
@@ -639,27 +476,34 @@
                     return;
                 }
 
-
-                startBtn.disabled =
-                    true;
-
+                startBtn.disabled = true;
 
                 try {
 
-                    // User gesture audio unlock.
-                    initAudio();
+                    console.log(
+                        "[CAMERA] Start button clicked."
+                    );
 
+                    // Browser user gesture
+                    // unlock audio
+                    unlockAudio();
 
-                    // Browser camera.
+                    // ------------------------------------------------
+                    // OPEN LOCAL BROWSER CAMERA
+                    // ------------------------------------------------
+
                     await openBrowserCamera();
 
+                    // ------------------------------------------------
+                    // START SERVER CAMERA SESSION
+                    // ------------------------------------------------
 
-                    // Backend session.
                     const response =
                         await fetch(
                             "/api/camera/start",
                             {
                                 method: "POST",
+
                                 headers: {
                                     "Accept":
                                         "application/json"
@@ -667,34 +511,51 @@
                             }
                         );
 
+                    if (!response.ok) {
+
+                        throw new Error(
+                            "Server camera session could not be started. HTTP " +
+                            response.status
+                        );
+                    }
 
                     const result =
                         await response.json();
 
-
-                    if (
-                        !response.ok ||
-                        !result.ok
-                    ) {
+                    if (!result.ok) {
 
                         throw new Error(
                             result.error ||
-                            "Detection pipeline could not start."
+                            "Drowsiness detection pipeline could not be loaded."
                         );
                     }
 
+                    // ------------------------------------------------
+                    // CAMERA RUNNING
+                    // ------------------------------------------------
 
-                    running =
-                        true;
+                    running = true;
 
+                    lastFrameTime = 0;
 
-                    processing =
-                        false;
+                    processing = false;
 
+                    // Actual browser camera hidden.
+                    cameraVideo.style.display =
+                        "none";
 
-                    lastFrameTime =
-                        0;
+                    // Processed frame visible.
+                    if (feed) {
 
+                        feed.style.display =
+                            "block";
+                    }
+
+                    if (placeholder) {
+
+                        placeholder.style.display =
+                            "none";
+                    }
 
                     if (stopBtn) {
 
@@ -702,36 +563,32 @@
                             false;
                     }
 
+                    startBtn.disabled = true;
 
-                    startBtn.disabled =
-                        true;
-
+                    console.log(
+                        "[CAMERA] Detection pipeline started."
+                    );
 
                     // ------------------------------------------------
-                    // Start AI background processing
+                    // START FRAME PROCESSING
                     // ------------------------------------------------
 
                     startProcessing();
 
-
                 } catch (error) {
 
                     console.error(
-                        "START ERROR:",
+                        "[CAMERA] Start error:",
                         error
                     );
 
-
-                    running =
-                        false;
-
+                    running = false;
 
                     stopProcessing();
 
                     closeBrowserCamera();
 
                     stopAllAudio();
-
 
                     if (placeholder) {
 
@@ -748,6 +605,15 @@
                         }
                     }
 
+                    if (feed) {
+
+                        feed.style.display =
+                            "none";
+
+                        feed.removeAttribute(
+                            "src"
+                        );
+                    }
 
                     if (stopBtn) {
 
@@ -755,23 +621,23 @@
                             true;
                     }
 
-
                     startBtn.disabled =
                         false;
 
-
                     alert(
                         "Could not start camera.\n\n" +
-                        error.message
+                        error.message +
+                        "\n\n" +
+                        "For local testing use:\n" +
+                        "http://127.0.0.1:5001"
                     );
                 }
             }
         );
     }
 
-
     // ============================================================
-    // STOP
+    // STOP CAMERA
     // ============================================================
 
     if (stopBtn) {
@@ -780,13 +646,7 @@
             "click",
             async function () {
 
-                running =
-                    false;
-
-
-                processing =
-                    false;
-
+                running = false;
 
                 stopProcessing();
 
@@ -794,18 +654,31 @@
 
                 stopAllAudio();
 
-
                 try {
 
                     await fetch(
                         "/api/camera/stop",
                         {
-                            method: "POST"
+                            method: "POST",
+
+                            headers: {
+                                "Accept":
+                                    "application/json"
+                            }
                         }
                     );
 
                 } catch (e) {}
 
+                if (feed) {
+
+                    feed.style.display =
+                        "none";
+
+                    feed.removeAttribute(
+                        "src"
+                    );
+                }
 
                 if (placeholder) {
 
@@ -822,20 +695,13 @@
                     }
                 }
 
-
                 if (stopBtn) {
-
-                    stopBtn.disabled =
-                        true;
+                    stopBtn.disabled = true;
                 }
-
 
                 if (startBtn) {
-
-                    startBtn.disabled =
-                        false;
+                    startBtn.disabled = false;
                 }
-
 
                 try {
 
@@ -848,14 +714,12 @@
 
                 } catch (e) {}
 
-
                 await showSessionSummary();
 
                 resetMonitor();
             }
         );
     }
-
 
     // ============================================================
     // RESET
@@ -872,19 +736,39 @@
                     await fetch(
                         "/api/camera/reset",
                         {
-                            method: "POST"
+                            method: "POST",
+
+                            headers: {
+                                "Accept":
+                                    "application/json"
+                            }
                         }
                     );
 
                 } catch (e) {}
 
+                resetMonitor();
             }
         );
     }
 
+    // ============================================================
+    // FRAME CAPTURE
+    // ============================================================
+
+    const captureCanvas =
+        document.createElement("canvas");
+
+    const canvasContext =
+        captureCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: false
+            }
+        );
 
     // ============================================================
-    // SEND FRAME TO SERVER
+    // SEND FRAME TO BACKEND
     // ============================================================
 
     async function processBrowserFrame() {
@@ -893,54 +777,47 @@
             return;
         }
 
-
         if (processing) {
             return;
         }
 
+        if (!cameraVideo) {
+            return;
+        }
 
         if (
             !cameraVideo.videoWidth ||
             !cameraVideo.videoHeight
         ) {
-
             return;
         }
-
 
         const now =
             Date.now();
 
-
         if (
             now - lastFrameTime <
-            AI_INTERVAL
+            FRAME_INTERVAL
         ) {
-
             return;
         }
-
 
         lastFrameTime =
             now;
 
-
-        processing =
-            true;
-
+        processing = true;
 
         try {
 
             // --------------------------------------------------------
-            // VERY SMALL AI FRAME
+            // RESIZE FRAME
             // --------------------------------------------------------
 
             const width =
                 Math.min(
                     cameraVideo.videoWidth,
-                    AI_WIDTH
+                    640
                 );
-
 
             const height =
                 Math.round(
@@ -951,14 +828,11 @@
                     )
                 );
 
-
             captureCanvas.width =
                 width;
 
-
             captureCanvas.height =
                 height;
-
 
             canvasContext.drawImage(
                 cameraVideo,
@@ -968,6 +842,9 @@
                 height
             );
 
+            // --------------------------------------------------------
+            // JPEG
+            // --------------------------------------------------------
 
             const blob =
                 await new Promise(
@@ -976,27 +853,31 @@
                         captureCanvas.toBlob(
                             resolve,
                             "image/jpeg",
-                            JPEG_QUALITY
+                            0.65
                         );
                     }
                 );
-
 
             if (!blob) {
                 return;
             }
 
+            // --------------------------------------------------------
+            // FORM DATA
+            // --------------------------------------------------------
 
             const formData =
                 new FormData();
 
-
             formData.append(
                 "frame",
                 blob,
-                "frame.jpg"
+                "camera.jpg"
             );
 
+            // --------------------------------------------------------
+            // SEND TO FLASK
+            // --------------------------------------------------------
 
             const response =
                 await fetch(
@@ -1007,35 +888,57 @@
                     }
                 );
 
-
             if (!response.ok) {
 
                 console.warn(
-                    "AI server error:",
+                    "[FRAME] HTTP error:",
                     response.status
                 );
 
                 return;
             }
 
-
             const result =
                 await response.json();
-
 
             if (!result.ok) {
 
                 console.warn(
-                    "AI error:",
+                    "[FRAME] Backend error:",
                     result.error
                 );
 
                 return;
             }
 
+            // --------------------------------------------------------
+            // PROCESSED IMAGE
+            // --------------------------------------------------------
+
+            if (
+                result.image &&
+                feed
+            ) {
+
+                let imageSrc =
+                    result.image;
+
+                if (
+                    !String(imageSrc)
+                        .startsWith("data:")
+                ) {
+
+                    imageSrc =
+                        "data:image/jpeg;base64," +
+                        imageSrc;
+                }
+
+                feed.src =
+                    imageSrc;
+            }
 
             // --------------------------------------------------------
-            // LIVE AI READING
+            // LIVE STATE
             // --------------------------------------------------------
 
             if (result.state) {
@@ -1045,21 +948,18 @@
                 );
             }
 
-
         } catch (error) {
 
             console.warn(
-                "AI frame error:",
+                "[FRAME] Processing error:",
                 error
             );
 
         } finally {
 
-            processing =
-                false;
+            processing = false;
         }
     }
-
 
     // ============================================================
     // PROCESSING LOOP
@@ -1069,14 +969,12 @@
 
         stopProcessing();
 
-
         processingTimer =
             setInterval(
                 processBrowserFrame,
-                100
+                50
             );
     }
-
 
     function stopProcessing() {
 
@@ -1086,14 +984,31 @@
                 processingTimer
             );
 
-            processingTimer =
-                null;
+            processingTimer = null;
         }
     }
 
+    // ============================================================
+    // FORMAT
+    // ============================================================
+
+    function fmt(value) {
+
+        if (
+            value === null ||
+            value === undefined ||
+            Number.isNaN(Number(value))
+        ) {
+
+            return "-";
+        }
+
+        return Number(value)
+            .toFixed(3);
+    }
 
     // ============================================================
-    // UI
+    // UI UPDATE
     // ============================================================
 
     function updateUI(s) {
@@ -1102,10 +1017,9 @@
             return;
         }
 
-
-        // ========================================================
+        // --------------------------------------------------------
         // METRICS
-        // ========================================================
+        // --------------------------------------------------------
 
         if ($("mEar")) {
 
@@ -1113,48 +1027,39 @@
                 fmt(s.ear);
         }
 
-
         if ($("mMar")) {
 
             $("mMar").textContent =
                 fmt(s.mar);
         }
 
-
         if ($("mPitch")) {
 
             $("mPitch").textContent =
                 s.pitch != null
-                    ? Number(
-                        s.pitch
-                    ).toFixed(0) + "°"
+                    ? Number(s.pitch)
+                        .toFixed(0) + "°"
                     : "-";
         }
-
 
         if ($("mYaw")) {
 
             $("mYaw").textContent =
                 s.yaw != null
-                    ? Number(
-                        s.yaw
-                    ).toFixed(0) + "°"
+                    ? Number(s.yaw)
+                        .toFixed(0) + "°"
                     : "-";
         }
-
 
         if ($("mPerclos")) {
 
             $("mPerclos").textContent =
                 s.perclos != null
                     ? (
-                        Number(
-                            s.perclos
-                        ) * 100
+                        Number(s.perclos) * 100
                     ).toFixed(0) + "%"
                     : "-";
         }
-
 
         if ($("mCnn")) {
 
@@ -1166,10 +1071,9 @@
                     : "n/a";
         }
 
-
-        // ========================================================
+        // --------------------------------------------------------
         // COUNTERS
-        // ========================================================
+        // --------------------------------------------------------
 
         if ($("cBlink")) {
 
@@ -1177,13 +1081,11 @@
                 s.blink_count || 0;
         }
 
-
         if ($("cYawn")) {
 
             $("cYawn").textContent =
                 s.yawn_count || 0;
         }
-
 
         if ($("cNod")) {
 
@@ -1191,23 +1093,20 @@
                 s.nod_count || 0;
         }
 
-
         if ($("cDrowsy")) {
 
             $("cDrowsy").textContent =
                 s.drowsy_events || 0;
         }
 
-
-        // ========================================================
+        // --------------------------------------------------------
         // STATUS
-        // ========================================================
+        // --------------------------------------------------------
 
         const level =
             String(
                 s.level || "ALERT"
             ).toLowerCase();
-
 
         setLevel(
             level,
@@ -1215,22 +1114,48 @@
             s.score || 0
         );
 
+        // --------------------------------------------------------
+        // MONITOR
+        // --------------------------------------------------------
 
         updateMonitor(s);
 
+        // --------------------------------------------------------
+        // SAFETY
+        // --------------------------------------------------------
+
         updateSafety(s);
+
+        // --------------------------------------------------------
+        // MOBILE
+        // --------------------------------------------------------
 
         updateMobile(s);
 
+        // --------------------------------------------------------
+        // AUDIO
+        // --------------------------------------------------------
+
         playAlertSound(s);
+
+        // --------------------------------------------------------
+        // VOICE
+        // --------------------------------------------------------
 
         maybeSpeak(s);
 
+        // --------------------------------------------------------
+        // BREAK
+        // --------------------------------------------------------
+
         updateBreak(s);
+
+        // --------------------------------------------------------
+        // CHARTS
+        // --------------------------------------------------------
 
         updateCharts(s);
     }
-
 
     // ============================================================
     // STATUS
@@ -1246,18 +1171,15 @@
             return;
         }
 
-
         statusCard.className =
             "card status-card level-" +
             level;
-
 
         if ($("statusText")) {
 
             $("statusText").textContent =
                 text;
         }
-
 
         if ($("scoreNum")) {
 
@@ -1267,10 +1189,8 @@
                 );
         }
 
-
         const fill =
             $("scoreFill");
-
 
         if (fill) {
 
@@ -1283,15 +1203,33 @@
                     )
                 );
 
-
             fill.style.width =
                 value + "%";
+
+            if (
+                level === "drowsy"
+            ) {
+
+                fill.style.background =
+                    "#ef4444";
+
+            } else if (
+                level === "warning"
+            ) {
+
+                fill.style.background =
+                    "#f59e0b";
+
+            } else {
+
+                fill.style.background =
+                    "#22c55e";
+            }
         }
     }
 
-
     // ============================================================
-    // PILL
+    // PILLS
     // ============================================================
 
     function pill(
@@ -1304,26 +1242,22 @@
             return;
         }
 
-
         element.textContent =
             text;
-
 
         element.className =
             "pill st-" +
             state;
     }
 
-
     // ============================================================
-    // MONITOR
+    // REAL-TIME MONITOR
     // ============================================================
 
     function updateMonitor(s) {
 
         const face =
             !!s.face_detected;
-
 
         pill(
             $("stFace"),
@@ -1335,6 +1269,9 @@
                 : "alert"
         );
 
+        // --------------------------------------------------------
+        // EYES
+        // --------------------------------------------------------
 
         if (!face) {
 
@@ -1357,6 +1294,9 @@
             );
         }
 
+        // --------------------------------------------------------
+        // DROWSINESS
+        // --------------------------------------------------------
 
         if (s.drowsiness) {
 
@@ -1364,6 +1304,18 @@
                 $("stDrowsy"),
                 "ALERT",
                 "alert"
+            );
+
+        } else if (
+            String(s.level || "")
+                .toUpperCase() ===
+            "WARNING"
+        ) {
+
+            pill(
+                $("stDrowsy"),
+                "Warning",
+                "warn"
             );
 
         } else {
@@ -1379,10 +1331,15 @@
             );
         }
 
+        // --------------------------------------------------------
+        // ATTENTION
+        // --------------------------------------------------------
+
+        const attention =
+            s.attention;
 
         if (
-            s.attention ===
-            "left"
+            attention === "left"
         ) {
 
             pill(
@@ -1392,8 +1349,7 @@
             );
 
         } else if (
-            s.attention ===
-            "right"
+            attention === "right"
         ) {
 
             pill(
@@ -1402,7 +1358,10 @@
                 "alert"
             );
 
-        } else if (!face) {
+        } else if (
+            attention === "no_face" ||
+            !face
+        ) {
 
             pill(
                 $("stAttention"),
@@ -1419,69 +1378,72 @@
             );
         }
 
+        // --------------------------------------------------------
+        // SUNGLASSES
+        // --------------------------------------------------------
 
-        pill(
-            $("stGlasses"),
-            !face
-                ? "–"
-                : s.sunglasses_detected
-                    ? "Detected"
-                    : "Not detected",
-            !face
-                ? "idle"
-                : s.sunglasses_detected
-                    ? "warn"
-                    : "normal"
-        );
-
-
-        const coverage =
-            s.face_coverage;
-
-
-        if (
-            coverage ===
-            "covered"
-        ) {
+        if (!face) {
 
             pill(
-                $("stCoverage"),
-                "COVERED",
-                "alert"
-            );
-
-        } else if (
-            coverage ===
-            "partial"
-        ) {
-
-            pill(
-                $("stCoverage"),
-                "Partially covered",
-                "warn"
-            );
-
-        } else if (
-            coverage ===
-            "clear"
-        ) {
-
-            pill(
-                $("stCoverage"),
-                "Clear",
-                "normal"
+                $("stGlasses"),
+                "–",
+                "idle"
             );
 
         } else {
 
             pill(
-                $("stCoverage"),
-                "–",
-                "idle"
+                $("stGlasses"),
+                s.sunglasses_detected
+                    ? "Detected"
+                    : "Not detected",
+                s.sunglasses_detected
+                    ? "warn"
+                    : "normal"
             );
         }
-    }
 
+        // --------------------------------------------------------
+        // FACE COVERAGE
+        // --------------------------------------------------------
+
+        const coverageMap = {
+
+            clear: [
+                "Clear",
+                "normal"
+            ],
+
+            partial: [
+                "Partially covered",
+                "warn"
+            ],
+
+            covered: [
+                "COVERED",
+                "alert"
+            ],
+
+            none: [
+                "Not visible",
+                "alert"
+            ]
+        };
+
+        const item =
+            coverageMap[
+                s.face_coverage
+            ] || [
+                "–",
+                "idle"
+            ];
+
+        pill(
+            $("stCoverage"),
+            item[0],
+            item[1]
+        );
+    }
 
     // ============================================================
     // SAFETY
@@ -1496,104 +1458,94 @@
                 : "#ef4444";
     }
 
-
     function updateSafety(s) {
 
-        if (
-            s.attention_score != null
-        ) {
+        const attention =
+            s.attention_score;
 
-            const v =
-                Number(
-                    s.attention_score
-                );
-
-
-            if ($("attNum")) {
-
-                $("attNum").textContent =
-                    Math.round(v);
-            }
-
-
-            if ($("attFill")) {
-
-                $("attFill").style.width =
-                    Math.max(
-                        0,
-                        Math.min(
-                            100,
-                            v
-                        )
-                    ) + "%";
-
-                $("attFill").style.background =
-                    scoreColor(v);
-            }
-        }
-
+        const safety =
+            s.safety_score;
 
         if (
-            s.safety_score != null
+            attention != null &&
+            $("attNum") &&
+            $("attFill")
         ) {
 
-            const v =
-                Number(
-                    s.safety_score
+            $("attNum").textContent =
+                Math.round(attention);
+
+            $("attFill").style.width =
+                Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        Number(attention)
+                    )
+                ) + "%";
+
+            $("attFill").style.background =
+                scoreColor(
+                    Number(attention)
                 );
-
-
-            if ($("safeNum")) {
-
-                $("safeNum").textContent =
-                    Math.round(v);
-            }
-
-
-            if ($("safeFill")) {
-
-                $("safeFill").style.width =
-                    Math.max(
-                        0,
-                        Math.min(
-                            100,
-                            v
-                        )
-                    ) + "%";
-
-                $("safeFill").style.background =
-                    scoreColor(v);
-            }
         }
 
+        if (
+            safety != null &&
+            $("safeNum") &&
+            $("safeFill")
+        ) {
 
-        if (s.risk_level) {
+            $("safeNum").textContent =
+                Math.round(safety);
+
+            $("safeFill").style.width =
+                Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        Number(safety)
+                    )
+                ) + "%";
+
+            $("safeFill").style.background =
+                scoreColor(
+                    Number(safety)
+                );
+        }
+
+        const risk =
+            s.risk_level;
+
+        if (risk) {
 
             pill(
                 $("riskPill"),
-                "RISK " +
-                    s.risk_level,
-                s.risk_level ===
-                    "LOW"
+                "RISK " + risk,
+                risk === "LOW"
                     ? "normal"
-                    : s.risk_level ===
-                        "MEDIUM"
+                    : risk === "MEDIUM"
                         ? "warn"
                         : "alert"
             );
         }
 
+        // --------------------------------------------------------
+        // DISTRACTION
+        // --------------------------------------------------------
 
         if (
             s.distraction_active
         ) {
 
+            const duration =
+                Number(
+                    s.distraction_duration || 0
+                ).toFixed(1);
+
             pill(
                 $("stDistract"),
-                Number(
-                    s.distraction_duration ||
-                    0
-                ).toFixed(1) + "s",
+                duration + "s",
                 s.distraction_alert
                     ? "alert"
                     : "warn"
@@ -1612,10 +1564,15 @@
             );
         }
 
+        // --------------------------------------------------------
+        // FATIGUE
+        // --------------------------------------------------------
+
+        const trend =
+            s.fatigue_trend;
 
         if (
-            s.fatigue_trend ===
-            "INCREASING"
+            trend === "INCREASING"
         ) {
 
             pill(
@@ -1625,8 +1582,7 @@
             );
 
         } else if (
-            s.fatigue_trend ===
-            "DECREASING"
+            trend === "DECREASING"
         ) {
 
             pill(
@@ -1636,8 +1592,7 @@
             );
 
         } else if (
-            s.fatigue_trend ===
-            "STABLE"
+            trend === "STABLE"
         ) {
 
             pill(
@@ -1656,7 +1611,6 @@
         }
     }
 
-
     // ============================================================
     // MOBILE
     // ============================================================
@@ -1674,7 +1628,6 @@
                     : "OFF";
         }
 
-
         if (
             s.camera_processing &&
             $("camProc")
@@ -1684,64 +1637,65 @@
                 s.camera_processing;
         }
 
-
         const n =
             s.notifications;
-
 
         if (!n) {
             return;
         }
 
+        if (!$("notifBadge")) {
+            return;
+        }
+
+        if (!n.enabled) {
+
+            $("notifBadge").textContent =
+                "OFF";
+
+            $("notifBadge").className =
+                "badge badge-off";
+
+        } else if (
+            n.configured
+        ) {
+
+            $("notifBadge").textContent =
+                "READY";
+
+            $("notifBadge").className =
+                "badge badge-on";
+
+        } else {
+
+            $("notifBadge").textContent =
+                "SIMULATED";
+
+            $("notifBadge").className =
+                "badge badge-warnb";
+        }
 
         if ($("notifProvider")) {
 
             $("notifProvider").textContent =
                 n.provider || "–";
         }
-
-
-        if ($("notifBadge")) {
-
-            if (!n.enabled) {
-
-                $("notifBadge").textContent =
-                    "OFF";
-
-            } else if (
-                n.configured
-            ) {
-
-                $("notifBadge").textContent =
-                    "READY";
-
-            } else {
-
-                $("notifBadge").textContent =
-                    "SIMULATED";
-            }
-        }
     }
-
 
     // ============================================================
     // BREAK
     // ============================================================
 
-    let breakDismissed =
-        false;
-
+    let breakDismissed = false;
 
     function updateBreak(s) {
 
         const banner =
             $("breakBanner");
 
-
         if (!banner) {
             return;
         }
-
 
         if (
             s.break_recommended &&
@@ -1755,23 +1709,24 @@
                     "Take a short break.";
             }
 
-
             banner.classList.remove(
                 "hidden"
             );
 
-        } else {
+        } else if (
+            !s.break_recommended
+        ) {
 
             banner.classList.add(
                 "hidden"
             );
+
+            breakDismissed = false;
         }
     }
 
-
     const breakDismiss =
         $("breakDismiss");
-
 
     if (breakDismiss) {
 
@@ -1782,7 +1737,6 @@
                 const banner =
                     $("breakBanner");
 
-
                 if (banner) {
 
                     banner.classList.add(
@@ -1790,24 +1744,23 @@
                     );
                 }
 
-
-                breakDismissed =
-                    true;
+                breakDismissed = true;
             }
         );
     }
-
 
     // ============================================================
     // VOICE
     // ============================================================
 
-    let lastVoiceKey =
-        null;
+    let lastVoiceKey = null;
+    let lastVoiceAt = 0;
 
-    let lastVoiceAt =
-        0;
-
+    const VOICE_COOLDOWN =
+        (
+            window.VOICE_COOLDOWN ||
+            8
+        ) * 1000;
 
     function maybeSpeak(s) {
 
@@ -1815,69 +1768,62 @@
             !voiceToggle ||
             !voiceToggle.checked
         ) {
-
             return;
         }
-
 
         if (
-            !window.speechSynthesis
+            !("speechSynthesis" in window)
         ) {
-
             return;
         }
 
+        const key =
+            s.voice_key;
+
+        const text =
+            s.voice_text;
 
         if (
-            !s.voice_key ||
-            !s.voice_text
+            !key ||
+            !text
         ) {
-
             return;
         }
-
 
         const now =
             Date.now();
 
-
         if (
-            s.voice_key ===
-                lastVoiceKey &&
+            key === lastVoiceKey &&
             now - lastVoiceAt <
-                8000
+            VOICE_COOLDOWN
         ) {
-
             return;
         }
 
-
         lastVoiceKey =
-            s.voice_key;
-
+            key;
 
         lastVoiceAt =
             now;
 
-
         try {
-
-            window.speechSynthesis.cancel();
-
 
             const utterance =
                 new SpeechSynthesisUtterance(
-                    s.voice_text
+                    text
                 );
 
-
             utterance.rate =
-                1.0;
+                1.02;
 
+            utterance.pitch =
+                1;
 
             utterance.volume =
-                1.0;
+                1;
 
+            window.speechSynthesis.cancel();
 
             window.speechSynthesis.speak(
                 utterance
@@ -1886,38 +1832,22 @@
         } catch (e) {}
     }
 
-
     // ============================================================
     // CHARTS
     // ============================================================
 
     let scoreHistory = [];
-
     let earHistory = [];
-
     let marHistory = [];
-
     let attentionHistory = [];
-
     let safetyHistory = [];
 
-
-    const MAX_POINTS =
-        40;
-
+    const MAX_POINTS = 60;
 
     function pushHistory(
         array,
         value
     ) {
-
-        if (
-            value == null
-        ) {
-
-            return;
-        }
-
 
         array.push({
 
@@ -1926,9 +1856,8 @@
                     .toLocaleTimeString(),
 
             y:
-                Number(value)
+                Number(value || 0)
         });
-
 
         if (
             array.length >
@@ -1939,7 +1868,6 @@
         }
     }
 
-
     function updateCharts(s) {
 
         pushHistory(
@@ -1947,30 +1875,29 @@
             s.score
         );
 
-
         pushHistory(
             earHistory,
             s.ear
         );
-
 
         pushHistory(
             marHistory,
             s.mar
         );
 
-
         pushHistory(
             attentionHistory,
             s.attention_score
         );
-
 
         pushHistory(
             safetyHistory,
             s.safety_score
         );
 
+        // --------------------------------------------------------
+        // SCORE
+        // --------------------------------------------------------
 
         if (
             window.scoreChart
@@ -1981,7 +1908,6 @@
                     p => p.x
                 );
 
-
             window.scoreChart
                 .data
                 .datasets[0]
@@ -1990,12 +1916,14 @@
                     p => p.y
                 );
 
-
             window.scoreChart.update(
                 "none"
             );
         }
 
+        // --------------------------------------------------------
+        // EAR / MAR
+        // --------------------------------------------------------
 
         if (
             window.earMarChart
@@ -2005,7 +1933,6 @@
                 earHistory.map(
                     p => p.x
                 );
-
 
             if (
                 window.earMarChart
@@ -2022,7 +1949,6 @@
                         p => p.y
                     );
 
-
                 window.earMarChart
                     .data
                     .datasets[1]
@@ -2032,12 +1958,14 @@
                     );
             }
 
-
             window.earMarChart.update(
                 "none"
             );
         }
 
+        // --------------------------------------------------------
+        // SAFETY
+        // --------------------------------------------------------
 
         if (
             window.safetyChart
@@ -2047,7 +1975,6 @@
                 attentionHistory.map(
                     p => p.x
                 );
-
 
             if (
                 window.safetyChart
@@ -2064,7 +1991,6 @@
                         p => p.y
                     );
 
-
                 window.safetyChart
                     .data
                     .datasets[1]
@@ -2074,13 +2000,11 @@
                     );
             }
 
-
             window.safetyChart.update(
                 "none"
             );
         }
     }
-
 
     // ============================================================
     // SESSION SUMMARY
@@ -2089,13 +2013,11 @@
     const summaryModal =
         $("summaryModal");
 
-
     async function showSessionSummary() {
 
         if (!summaryModal) {
             return;
         }
-
 
         try {
 
@@ -2104,31 +2026,24 @@
                     "/api/session/summary"
                 );
 
-
             const sum =
                 await response.json();
-
 
             if (
                 !sum ||
                 !sum.duration_seconds
             ) {
-
                 return;
             }
 
-
             const body =
                 $("summaryBody");
-
 
             if (!body) {
                 return;
             }
 
-
             body.innerHTML = "";
-
 
             const rows = [
 
@@ -2183,24 +2098,25 @@
                 ]
             ];
 
-
             rows.forEach(
                 ([key, label]) => {
+
+                    const value =
+                        sum[key] ??
+                        "–";
 
                     const cell =
                         document.createElement(
                             "div"
                         );
 
-
                     cell.className =
                         "summary-cell";
-
 
                     cell.innerHTML =
                         `
                         <div class="sc-num">
-                            ${sum[key] ?? "–"}
+                            ${value}
                         </div>
 
                         <div class="sc-lbl">
@@ -2208,13 +2124,11 @@
                         </div>
                         `;
 
-
                     body.appendChild(
                         cell
                     );
                 }
             );
-
 
             summaryModal.classList.remove(
                 "hidden"
@@ -2229,10 +2143,12 @@
         }
     }
 
+    // ============================================================
+    // SUMMARY CLOSE
+    // ============================================================
 
     const summaryClose =
         $("summaryClose");
-
 
     if (summaryClose) {
 
@@ -2247,14 +2163,12 @@
         );
     }
 
-
     // ============================================================
-    // EXPORT
+    // EXPORT CSV
     // ============================================================
 
     const exportCsvBtn =
         $("exportCsvBtn");
-
 
     if (exportCsvBtn) {
 
@@ -2268,10 +2182,12 @@
         );
     }
 
+    // ============================================================
+    // EXPORT JSON
+    // ============================================================
 
     const exportJsonBtn =
         $("exportJsonBtn");
-
 
     if (exportJsonBtn) {
 
@@ -2284,7 +2200,6 @@
             }
         );
     }
-
 
     // ============================================================
     // RESET UI
@@ -2310,13 +2225,11 @@
             }
         );
 
-
         pill(
             $("riskPill"),
             "RISK –",
             "idle"
         );
-
 
         pill(
             $("stDistract"),
@@ -2324,13 +2237,11 @@
             "idle"
         );
 
-
         pill(
             $("stFatigue"),
             "–",
             "idle"
         );
-
 
         if ($("attNum")) {
 
@@ -2338,13 +2249,11 @@
                 "–";
         }
 
-
         if ($("safeNum")) {
 
             $("safeNum").textContent =
                 "–";
         }
-
 
         if ($("attFill")) {
 
@@ -2352,31 +2261,40 @@
                 "0%";
         }
 
-
         if ($("safeFill")) {
 
             $("safeFill").style.width =
                 "0%";
         }
 
+        if ($("breakBanner")) {
 
-        scoreHistory = [];
-
-        earHistory = [];
-
-        marHistory = [];
-
-        attentionHistory = [];
-
-        safetyHistory = [];
+            $("breakBanner")
+                .classList
+                .add("hidden");
+        }
 
         breakDismissed =
             false;
 
         lastVoiceKey =
             null;
-    }
 
+        scoreHistory =
+            [];
+
+        earHistory =
+            [];
+
+        marHistory =
+            [];
+
+        attentionHistory =
+            [];
+
+        safetyHistory =
+            [];
+    }
 
     // ============================================================
     // INITIAL STATE
@@ -2391,19 +2309,14 @@
                     "/api/state"
                 );
 
-
             if (!response.ok) {
                 return;
             }
 
-
             const state =
                 await response.json();
 
-
-            updateMobile(
-                state
-            );
+            updateMobile(state);
 
         } catch (e) {
 
@@ -2414,6 +2327,9 @@
         }
     }
 
+    // ============================================================
+    // START INITIAL STATE
+    // ============================================================
 
     loadInitialState();
 
