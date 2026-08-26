@@ -1,29 +1,22 @@
 # ============================================================
-#  Driver Drowsiness Detection Dashboard - Python dependencies
+# Driver Drowsiness Detection Dashboard - Production
+# Python 3.11 recommended
 # ============================================================
-# Tested with Python 3.10 / 3.11 (MediaPipe supports 3.8-3.12).
-#
-#   python -m venv venv
-#   source venv/bin/activate          (Windows: venv\Scripts\activate)
-#   pip install -r requirements.txt
-#
-# Core web + vision stack (required):
+
 Flask>=3.0,<4.0
-opencv-python>=4.8
+
+# Computer vision
+opencv-python>=4.8,<5.0
 mediapipe>=0.10.9
-numpy>=1.24,<2.0
+numpy==1.26.4
 Pillow>=10.0
-scipy>=1.10
+scipy>=1.10,<2.0
 
-# Deep-learning CNN eye-state model (OPTIONAL).
-# Only needed to TRAIN or RUN the CNN classifier. The landmark
-# detectors (EAR/MAR/head-pose) work fine without this.
-# On Apple Silicon use `tensorflow-macos` instead of `tensorflow`.
-tensorflow>=2.13,<2.17
+# CNN / Deep Learning
+tensorflow==2.16.2
 
-# Mobile push notifications via Firebase Cloud Messaging (OPTIONAL).
-# The app runs fine without it: if firebase-admin is absent or no
-# credentials are configured, notifications are simulated/logged instead
-# of sent. Uncomment to enable real push to a phone. See docs/FCM_SETUP.md.
+# Production server
+gunicorn>=23.0,<24.0
+
+# Optional Firebase notifications
 # firebase-admin>=6.5,<7.0
-gunicorn>=23.0,<24
